@@ -7,7 +7,7 @@ from src.api.routers import (alertas, alertas_preditivos, auditoria, auth, clima
                              config_parametros, dados_mercado, dashboard, frutas, ia,
                              leituras, leituras_rejeitadas, lotes, perfis, previsoes,
                              previsoes_ia, recomendacoes, relatorios, relatorios_gerados,
-                             risco, sensor_leituras, sensores, usuarios, viagens)
+                             risco, sensor_leituras, sensores, usuarios)
 
 admin = [Depends(require_role(ADMIN))]
 produtor = [Depends(require_role(PRODUTOR_EXPORTADOR, ADMIN))]  # já inclui o Admin
@@ -35,6 +35,6 @@ for r in (perfis, usuarios):
 # Produtor/Exportador (e Admin)
 for r in (leituras, leituras_rejeitadas, auditoria, clima, sensores, config_parametros,
           dashboard, sensor_leituras, lotes, alertas, frutas, dados_mercado,
-          relatorios, relatorios_gerados, viagens, risco,
+          relatorios, relatorios_gerados, risco,
           previsoes, alertas_preditivos, ia, recomendacoes, previsoes_ia):
     app.include_router(r.router, dependencies=produtor)
