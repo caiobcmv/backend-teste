@@ -79,6 +79,18 @@ def listar_alertas(
         return [_saida(r) for r in cur.fetchall()]
 
 
+@router.post("/reconhecer-todos")
+def reconhecer_todos(conn=Depends(get_conn)):
+    """Move todos os alertas 'aberto' para 'reconhecido'."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE alerta SET status = 'reconhecido' WHERE lower(status) = 'aberto'"
+        )
+        n = cur.rowcount
+    conn.commit()
+    return {"reconhecidos": n}
+
+
 @router.get("/{id_alerta}", response_model=AlertaOut)
 def obter_alerta(id_alerta: int, conn=Depends(get_conn)):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:

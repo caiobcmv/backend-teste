@@ -7,7 +7,7 @@ from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 
 from ..deps import get_conn
-from ..deps_auth import carregar_usuario
+from ..deps_auth import carregar_usuario, get_current_user
 from ..email_service import enviar_codigo_login
 from ..security_auth import (
     ACCESS_MIN, DUMMY_HASH, REFRESH_DIAS,
@@ -312,3 +312,14 @@ def logout(body: RefreshIn, request: Request, conn=Depends(get_conn)):
     if r:
         _audit(conn, r[0], "logout", request)
     conn.commit()
+
+
+@router.get("/me")
+def quem_sou_eu(user=Depends(get_current_user)):
+    """Dados do usuário logado (nome e perfil do cabeçalho)."""
+    return {
+        "id_usuario": user["id_usuario"],
+        "nome": user["nome"],
+        "email": user["email"],
+        "perfil": user["perfil"],
+    }
