@@ -1,7 +1,7 @@
 # busca a última leitura do ThingSpeak e grava no banco.
 import time
 from src import config, thingspeak_client, database
-
+from src.api.services import notificacao
 
 def main():
     print(f"Conectando no canal ThingSpeak {config.THINGSPEAK_CHANNEL_ID}...")
@@ -36,8 +36,15 @@ def main():
         except Exception as e:
             print(f"[ERRO] {e}")
 
-        time.sleep(config.POLL_INTERVAL_SECONDS)
+        if config.NOTIFICACAO_ATIVA:
+            try:
+                r = notificacao.processar_alertas_pendentes()
+                if r["enviado"] or r["falha"]:
+                    print(f"[NOTIFICACAO] {r}")
+            except Exception as e:
+                print(f"[ERRO] notificações: {e}")
 
+        time.sleep(config.POLL_INTERVAL_SECONDS)    
 
 if __name__ == "__main__":
     main()

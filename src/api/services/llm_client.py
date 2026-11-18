@@ -1,9 +1,10 @@
+"""Cliente único de LLM (Gemini, Groq ou Ollama), só com `requests` (já está no requirements.txt)."""
 import json
 import os
 
-import httpx
+import requests
 
-TIMEOUT = 45.0
+TIMEOUT = 30.0
 
 
 class LLMError(Exception):
@@ -23,20 +24,32 @@ def _limpar_json(texto: str) -> dict:
 
 
 def _gemini(system: str, user: str, model: str) -> str:
-    key = os.environ["GEMINI_API_KEY"]
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise LLMError("GEMINI_API_KEY não encontrada no ambiente.")
     body = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],
         "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
     }
-    r = httpx.post(url, headers={"x-goog-api-key": key}, json=body, timeout=TIMEOUT)
+    # a chave vai no header (não na URL), para não aparecer em mensagens de erro/logs
+    r = requests.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        headers={"x-goog-api-key": key},
+        json=body,
+        timeout=TIMEOUT,
+    )
     r.raise_for_status()
-    return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    try:
+        return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise LLMError("Resposta inesperada do Gemini (sem texto).") from e
 
 
 def _groq(system: str, user: str, model: str) -> str:
-    key = os.environ["GROQ_API_KEY"]
+    key = os.environ.get("GROQ_API_KEY")
+    if not key:
+        raise LLMError("GROQ_API_KEY não encontrada no ambiente.")
     body = {
         "model": model,
         "temperature": 0.2,
@@ -46,7 +59,7 @@ def _groq(system: str, user: str, model: str) -> str:
             {"role": "user", "content": user},
         ],
     }
-    r = httpx.post(
+    r = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={"Authorization": f"Bearer {key}"},
         json=body,
@@ -68,7 +81,7 @@ def _ollama(system: str, user: str, model: str) -> str:
             {"role": "user", "content": user},
         ],
     }
-    r = httpx.post(f"{base}/api/chat", json=body, timeout=120.0)
+    r = requests.post(f"{base}/api/chat", json=body, timeout=120.0)
     r.raise_for_status()
     return r.json()["message"]["content"]
 
@@ -79,17 +92,21 @@ _PROVEDORES = {"gemini": _gemini, "groq": _groq, "ollama": _ollama}
 def gerar_json(system: str, user: str) -> tuple[dict, str]:
     """Chama o provedor configurado e devolve (dict_json, 'provedor:modelo').
 
-    Levanta LLMError em qualquer falha (rede, cota, JSON inválido), para o
-    chamador cair no parecer de contingência por template.
+    Levanta LLMError em qualquer falha (rede, cota, JSON inválido).
     """
     provedor = os.environ.get("LLM_PROVIDER", "gemini").lower()
     if provedor not in _PROVEDORES:
         raise LLMError(f"LLM_PROVIDER inválido: {provedor}")
+
     model = os.environ.get("LLM_MODEL") or ("gemini-2.5-flash" if provedor == "gemini" else None)
     if not model:
         raise LLMError("Defina LLM_MODEL no .env")
+
     try:
         bruto = _PROVEDORES[provedor](system, user, model)
-    except (httpx.HTTPError, KeyError, IndexError) as e:
+    except LLMError:
+        raise
+    except Exception as e:
         raise LLMError(f"Falha ao chamar {provedor}: {e}") from e
+
     return _limpar_json(bruto), f"{provedor}:{model}"
