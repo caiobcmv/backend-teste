@@ -46,8 +46,5 @@ def main():
 
         time.sleep(config.POLL_INTERVAL_SECONDS)    
 
-        time.sleep(config.POLL_INTERVAL_SECONDS)
-
-
 if __name__ == "__main__":
     main()

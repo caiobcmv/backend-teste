@@ -177,23 +177,6 @@ def coletar_dados(cur, id_lote: int, tipo: str, dias: int) -> dict:
     todos = cur.fetchall()
     alertas = {"total": len(todos), "recentes": [dict(a) for a in todos[:10]]}
 
-    cur.execute(
-        """SELECT v.id_viagem, v.status, v.saida, v.chegada_prevista, p.nome AS porto, p.uf
-           FROM viagem v JOIN porto p ON p.id_porto = v.fk_porto_id_porto
-           WHERE v.fk_lote_id_lote = %s ORDER BY v.saida DESC LIMIT 1""", (id_lote,))
-    v = cur.fetchone()
-    transporte = None
-    if v:
-        cur.execute(
-            """SELECT count(*) AS n_leituras,
-                      round(avg(temperatura_camara)::numeric,1) AS temp_media,
-                      round(min(temperatura_camara)::numeric,1) AS temp_min,
-                      round(max(temperatura_camara)::numeric,1) AS temp_max,
-                      round(avg(umidade_camara)::numeric,1) AS umid_media
-               FROM leitura_transporte WHERE fk_viagem_id_viagem = %s""", (v["id_viagem"],))
-        transporte = {**{k: v[k] for k in ("porto", "uf", "status", "saida", "chegada_prevista")},
-                      **cur.fetchone()}
-
     dados = {
         "tipo": tipo,
         "lote": {"id": lote["id_lote"], "fruta": lote["fruta"], "quantidade": lote["quantidade"],
@@ -206,7 +189,6 @@ def coletar_dados(cur, id_lote: int, tipo: str, dias: int) -> dict:
         "vpd_limite": dict(param_irr) if param_irr else None,
         "previsoes": previsoes,
         "alertas": alertas,
-        "transporte": transporte,
         "referencia": {"data_geracao": agora.date(),
                        "defasagem_dias": (agora - ultima).days if ultima else None},
     }

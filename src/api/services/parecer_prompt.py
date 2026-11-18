@@ -4,7 +4,6 @@ SECOES = {
     "agronomico": [
         "Identificação do lote",
         "Condições durante o cultivo e a colheita",
-        "Cadeia fria (armazenamento e transporte)",
         "Conformidade com as faixas ideais",
         "Riscos identificados",
         "Recomendações",
@@ -134,17 +133,6 @@ def parecer_template(dados: dict) -> list[dict]:
         elif titulo.startswith(("Condições", "Efeito", "Estado")):
             texto = (_linhas_leituras(dados, "ar") + " " + _linhas_leituras(dados, "solo")).strip() \
                 or "Não há leituras disponíveis para este lote."
-        elif titulo.startswith("Cadeia fria"):
-            t = dados.get("transporte")
-            if t and t.get("n_leituras"):
-                texto = (f"Viagem para {t['porto']}/{t['uf']} ({t['status']}): "
-                         f"{t['n_leituras']} leituras da câmara, temperatura média "
-                         f"{_n(t['temp_media'], ' °C')} (mín {_n(t['temp_min'])}, "
-                         f"máx {_n(t['temp_max'])}).")
-            elif t:
-                texto = f"Viagem para {t['porto']}/{t['uf']} ({t['status']}) sem leituras da câmara."
-            else:
-                texto = "Não há viagem registrada para este lote."
         elif titulo.startswith(("Conformidade", "Riscos de perda")):
             f = dados.get("faixa")
             if not f:

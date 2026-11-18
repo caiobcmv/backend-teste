@@ -71,7 +71,6 @@ def listar_variedades(id_fruta: Optional[int] = None, conn=Depends(get_conn)):
         r["brix_min"] = _f(r["brix_min"])
     return linhas
 
-
 @router.get("/portos")
 def listar_portos(conn=Depends(get_conn)):
     """Portos homologados com a rota (distância e duração), quando houver."""
