@@ -31,3 +31,5 @@ TEMP_MIN_VALIDA = float(os.getenv("TEMP_MIN_VALIDA", "-40"))
 TEMP_MAX_VALIDA = float(os.getenv("TEMP_MAX_VALIDA", "80"))
 UMIDADE_MIN_VALIDA = float(os.getenv("UMIDADE_MIN_VALIDA", "0"))
 UMIDADE_MAX_VALIDA = float(os.getenv("UMIDADE_MAX_VALIDA", "100")) 
+
+

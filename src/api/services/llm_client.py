@@ -1,4 +1,3 @@
-
 import json
 import os
 
@@ -31,7 +30,7 @@ def _gemini(system: str, user: str, model: str) -> str:
         "contents": [{"role": "user", "parts": [{"text": user}]}],
         "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
     }
-    r = httpx.post(url, params={"key": key}, json=body, timeout=TIMEOUT)
+    r = httpx.post(url, headers={"x-goog-api-key": key}, json=body, timeout=TIMEOUT)
     r.raise_for_status()
     return r.json()["candidates"][0]["content"]["parts"][0]["text"]
 

@@ -136,13 +136,10 @@ def parecer_template(dados: dict) -> list[dict]:
                 or "Não há leituras disponíveis para este lote."
         elif titulo.startswith("Cadeia fria"):
             t = dados.get("transporte")
-            if t and t.get("n_leituras"):
-                texto = (f"Viagem para {t['porto']}/{t['uf']} ({t['status']}): "
-                         f"{t['n_leituras']} leituras da câmara, temperatura média "
-                         f"{_n(t['temp_media'], ' °C')} (mín {_n(t['temp_min'])}, "
-                         f"máx {_n(t['temp_max'])}).")
-            elif t:
-                texto = f"Viagem para {t['porto']}/{t['uf']} ({t['status']}) sem leituras da câmara."
+            if t:
+                texto = (f"Viagem para {t['porto']}/{t['uf']} ({t['status']}), saída em "
+                         f"{_n(t['saida'])}, chegada prevista em {_n(t['chegada_prevista'])}. "
+                         "Não há leituras de temperatura da câmara registradas.")
             else:
                 texto = "Não há viagem registrada para este lote."
         elif titulo.startswith(("Conformidade", "Riscos de perda")):
