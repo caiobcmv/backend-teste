@@ -9,7 +9,7 @@ from src.api.routers import (alertas, alertas_preditivos, analista, auditoria, a
                              dashboard, frutas, ia, leituras, leituras_rejeitadas, lotes,
                              perfis, previsoes, previsoes_ia, recomendacoes, relatorios,
                              relatorios_gerados, risco, sensor_leituras, sensores,
-                             usuarios,pareceres)
+                             usuarios,pareceres, notificacoes)
 
 # O Administrador passa em TODAS as regras (bypass em deps_auth), então não é listado aqui.
 # O Produtor/Exportador é somente leitura: nenhuma regra lhe dá POST/PUT/PATCH/DELETE.
@@ -44,6 +44,7 @@ app.add_middleware(
 
 # público (login, refresh, 2FA) — /auth/me exige token
 app.include_router(auth.router)
+app.include_router(notificacoes.router)
 
 for r in (perfis, usuarios):
     app.include_router(r.router, dependencies=admin)

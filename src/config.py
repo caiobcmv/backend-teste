@@ -31,3 +31,10 @@ TEMP_MIN_VALIDA = float(os.getenv("TEMP_MIN_VALIDA", "-40"))
 TEMP_MAX_VALIDA = float(os.getenv("TEMP_MAX_VALIDA", "80"))
 UMIDADE_MIN_VALIDA = float(os.getenv("UMIDADE_MIN_VALIDA", "0"))
 UMIDADE_MAX_VALIDA = float(os.getenv("UMIDADE_MAX_VALIDA", "100")) 
+
+NOTIFICACAO_ATIVA = os.getenv("NOTIFICACAO_ATIVA", "false").lower() == "true"
+NOTIFICACAO_INTERVALO_MIN = int(os.getenv("NOTIFICACAO_INTERVALO_MIN", "60"))
+NOTIFICACAO_JANELA_HORAS = int(os.getenv("NOTIFICACAO_JANELA_HORAS", "24"))
+NOTIFICACAO_MAX_TENTATIVAS = int(os.getenv("NOTIFICACAO_MAX_TENTATIVAS", "3"))
+NOTIFICACAO_RETRY_MIN = int(os.getenv("NOTIFICACAO_RETRY_MIN", "5"))
+NOTIFICACAO_PERFIS = [p.strip().lower() for p in os.getenv("NOTIFICACAO_PERFIS", "").split(",") if p.strip()]
