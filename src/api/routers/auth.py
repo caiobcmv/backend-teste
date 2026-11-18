@@ -58,7 +58,7 @@ def _audit(conn, id_usuario, acao: str, request: Request, detalhes: dict | None 
     resultado = "falha" if any(p in acao for p in _ACOES_FALHA) else "sucesso"
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO log_acesso (fk_usuario_id_usuario, acao, resultado, ip, data_hora) VALUES (%s, %s, %s, %s, now())",
+            "INSERT INTO log_acesso (fk_usuario_id_usuario, acao, resultado, ip, data_hora) VALUES (%s, %s, %s, %s, (now() AT TIME ZONE 'UTC'))",
             (id_usuario, acao, resultado, _ip(request)),
         )
 
@@ -77,7 +77,7 @@ def _bloqueado(conn, id_usuario: int) -> bool:
             SELECT count(*) FROM log_acesso
              WHERE fk_usuario_id_usuario = %s
                AND acao IN ('login_falha', '2fa_falha')
-               AND data_hora > now() - make_interval(mins => %s)
+               AND data_hora > (now() AT TIME ZONE 'UTC') - make_interval(mins => %s)
             """,
             (id_usuario, JANELA_MIN),
         )

@@ -256,6 +256,7 @@ class ParecerEstruturadoSchema(BaseModel):
 class ParecerIAResponse(BaseModel):
     id_lote: int
     modelo: str
-    origem: str  # 'CACHE', 'GEMINI' ou 'FALLBACK_TEMPLATE'
+    origem: str  # 'CACHE' (já gerado), 'IA' (gerado agora) ou 'FALLBACK_TEMPLATE' (IA indisponível)
     conteudo: ParecerEstruturadoSchema
-    data_geracao: datetime    
+    data_geracao: datetime
+    expira_em: datetime  # a partir daí o próximo GET gera um parecer novo

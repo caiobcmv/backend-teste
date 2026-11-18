@@ -11,7 +11,7 @@ from psycopg2.extras import Json, RealDictCursor
 from pydantic import BaseModel, Field
 
 from src.api.deps import get_conn
-from src.api.deps_auth import get_current_user                    # AJUSTE
+from src.api.deps_auth import get_current_user
 from src.api.services.llm_client import LLMError, gerar_json
 from src.api.services.parecer_prompt import (
     SYSTEM_PROMPT, montar_prompt_usuario, parecer_template, secoes_para_texto, validar_saida)
@@ -69,16 +69,20 @@ WITH base AS (
          CASE WHEN r.origem = 'simulado' OR s.tipo_sensor = 'simulado'
               THEN 'simulado' ELSE 'real' END AS origem,
          r.data_hora,
-         CASE WHEN s.ambiente = 'solo' THEN COALESCE(r.temperatura_solo, r.temperatura)
-              ELSE r.temperatura END AS t,
-         CASE WHEN s.ambiente = 'solo' THEN COALESCE(r.umidade_solo, r.umidade)
-              ELSE r.umidade END AS u
+         r.temperatura AS t,
+         r.umidade AS u
   FROM leitura_climatica r
   JOIN sensor s ON s.id_sensor = r.fk_sensor_id_sensor
   WHERE s.fk_lote_id_lote = %(lote)s
     AND r.data_hora BETWEEN %(ini)s AND %(fim)s
 )
 """
+
+
+def _tabela_existe(cur, nome: str) -> bool:
+    """Tabela opcional: se não existir no banco, o parecer segue sem esse bloco de dados."""
+    cur.execute("SELECT to_regclass(%s) IS NOT NULL AS ok", (f"public.{nome}",))
+    return cur.fetchone()["ok"]
 
 
 def coletar_dados(cur, id_lote: int, tipo: str, dias: int) -> dict:
@@ -147,10 +151,12 @@ def coletar_dados(cur, id_lote: int, tipo: str, dias: int) -> dict:
             if h:
                 l["horas_total"], l["horas_fora"] = h["horas_total"], h["horas_fora"]
 
-    cur.execute(
-        """SELECT vpd_limite_kpa, aprovado FROM parametro_irrigacao
-           WHERE fk_fruta_id_fruta = %s""", (lote["fk_fruta_id_fruta"],))
-    param_irr = cur.fetchone()
+    param_irr = None
+    if _tabela_existe(cur, "parametro_irrigacao"):
+        cur.execute(
+            """SELECT vpd_limite_kpa, aprovado FROM parametro_irrigacao
+               WHERE fk_fruta_id_fruta = %s""", (lote["fk_fruta_id_fruta"],))
+        param_irr = cur.fetchone()
 
     cur.execute(
         """SELECT DISTINCT ON (tipo) tipo, categoria::text AS categoria, valor, unidade,
@@ -254,7 +260,7 @@ def gerar(body: GerarIn, request: Request, conn=Depends(get_conn),
         secoes = validar_saida(saida, body.tipo)
     except (LLMError, ValueError) as e:
         log.warning("IA indisponível ou resposta inválida (%s); usando template", e)
-        secoes, origem = parecer_template(dados), "template"
+        secoes, origem, provedor = parecer_template(dados), "template", None
     texto = secoes_para_texto(secoes)
 
     try:
@@ -350,4 +356,4 @@ def assinar(id_parecer: int, body: AssinarIn, request: Request, conn=Depends(get
     except Exception:
         conn.rollback()
         raise
-    return _formatar(r)
+    return _formatar(r)
