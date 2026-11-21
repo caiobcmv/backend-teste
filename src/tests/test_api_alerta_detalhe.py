@@ -1,7 +1,7 @@
 """Testa GET /alertas/{id}/detalhe de ponta a ponta (rota + SQL roteirizado), sem banco real.
 
 Usa o mesmo padrão do test_api_permissoes.py: override de get_conn + token falso.
-O 'banco' é um cursor de mentira que devolve linhas conforme o trecho do SQL executado.
+O "banco" é um cursor de mentira que devolve linhas conforme o trecho do SQL executado.
 """
 from datetime import datetime, timedelta, timezone
 
