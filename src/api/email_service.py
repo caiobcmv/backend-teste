@@ -59,3 +59,23 @@ def enviar_aviso_conta_ativada(para: str, nome: str) -> None:
         "Se não foi você, avise o administrador do sistema imediatamente.\n"
     )
     _enviar(para, "Conta ativada", corpo)    
+
+def enviar_link_reset_senha(para: str, nome: str, link: str, validade_min: int) -> None:
+    corpo = (
+        f"Olá, {nome}.\n\n"
+        "Recebemos um pedido para redefinir a senha da sua conta no Dashboard FVS.\n"
+        f"Para escolher uma nova senha, acesse (vale por {validade_min} minutos e só pode ser usado uma vez):\n\n"
+        f"{link}\n\n"
+        "Se não foi você, ignore este e-mail: sua senha continua a mesma.\n"
+    )
+    _enviar(para, "Redefinição de senha", corpo)
+
+
+def enviar_aviso_senha_alterada(para: str, nome: str) -> None:
+    corpo = (
+        f"Olá, {nome}.\n\n"
+        "A senha da sua conta no Dashboard FVS acabou de ser alterada.\n\n"
+        "Se foi você, não precisa fazer nada. Se não reconhece essa alteração, "
+        "use a opção \"Esqueci minha senha\" agora e avise o administrador do sistema.\n"
+    )
+    _enviar(para, "Sua senha foi alterada", corpo)

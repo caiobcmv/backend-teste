@@ -1,11 +1,11 @@
 # Raiz - Backend
 
-Backend do **Raiz**, uma plataforma de monitoramento agrícola por sensores. Reúne dois programas que compartilham o mesmo banco PostgreSQL:
+Backend da plataforma **Raiz**, desenvolvida para o monitoramento agrícola por meio de sensores. A aplicação é composta por dois programas independentes que compartilham a mesma instância de banco de dados PostgreSQL:
 
-* um **serviço de ingestão** que lê o canal ThingSpeak (ESP32/DHT11), valida e grava as leituras;
-* uma **API REST (FastAPI)** que alimenta o dashboard: sensores, lotes, leituras, alertas, faixas ideais, mercado, riscos, relatórios, usuários e auditoria.
+- **Serviço de ingestão de dados:** responsável pela leitura dos dados provenientes do canal ThingSpeak (ESP32/DHT11), validação das informações recebidas e persistência das leituras no banco de dados.
+- **API REST (FastAPI):** responsável por disponibilizar os dados e funcionalidades consumidos pelo dashboard, abrangendo sensores, lotes, leituras, alertas, faixas ideais, mercado, riscos, relatórios, usuários e auditoria.
 
-> **Projeto em desenvolvimento.** A API já cobre a maior parte do dashboard, mas **ainda não tem login nem controle de acesso: nenhuma rota exige autenticação** (veja [Autenticação e Segurança](#autenticação-e-segurança)). Estrutura e banco podem mudar. Este README reflete o estado atual do código.
+> **Status do projeto: em desenvolvimento.** A API já implementa a maior parte das funcionalidades necessárias ao dashboard. Entretanto, ainda não possui mecanismos de autenticação ou controle de acesso, de modo que nenhuma rota exige autenticação atualmente (consulte [Autenticação e Segurança](#autenticação-e-segurança)). A estrutura da aplicação e o esquema do banco de dados ainda estão sujeitos a alterações. Este README documenta o estado atual da implementação.
 
 ## Fluxo
 
@@ -125,7 +125,7 @@ O código usa:
 
 O `seed.sql` não cadastra previsões de IA; sem esses dados, `/riscos/*` retorna listas vazias. Se o esquema do banco mudar, este backend precisará acompanhar.
 
-## Como Executar
+## Como Executar:
 
 ### 1. Clonar o repositório
 

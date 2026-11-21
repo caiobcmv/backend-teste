@@ -9,7 +9,7 @@ from src.api.routers import (alertas, alertas_preditivos, analista, auditoria, a
                              dashboard, frutas, ia, leituras, leituras_rejeitadas, lotes,
                              perfis, previsoes, previsoes_ia, recomendacoes, relatorios,
                              relatorios_gerados, risco, sensor_leituras, sensores,
-                             usuarios,pareceres, notificacoes)
+                             usuarios, pareceres, notificacoes, parecer_ia)
 
 # O Administrador passa em TODAS as regras (bypass em deps_auth), então não é listado aqui.
 # O Produtor/Exportador é somente leitura: nenhuma regra lhe dá POST/PUT/PATCH/DELETE.
@@ -17,7 +17,8 @@ from src.api.routers import (alertas, alertas_preditivos, analista, auditoria, a
 # só Administrador
 admin = [Depends(require_role(ADMIN))]
 
-# Analista e Produtor consultam (GET); só o Admin escreve
+# Analista e Produtor consultam (GET); só o Admin escreve.
+# O parecer automático de IA (GET /ia/parecer) fica aqui: os 3 perfis só leem, ninguém gera.
 consulta = [Depends(require_role_por_metodo(
     leitura=(ANALISTA, PRODUTOR_EXPORTADOR), escrita=()))]
 
@@ -50,7 +51,7 @@ for r in (perfis, usuarios):
     app.include_router(r.router, dependencies=admin)
 
 for r in (leituras, leituras_rejeitadas, sensor_leituras, dashboard, clima, lotes, frutas,
-          risco, previsoes, analista):
+          risco, previsoes, analista, parecer_ia):
     app.include_router(r.router, dependencies=consulta)
 
 for r in (sensores, config_parametros, alertas, alertas_preditivos, catalogo,

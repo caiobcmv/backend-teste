@@ -1,5 +1,6 @@
 import hmac
 import os
+import secrets
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
@@ -29,6 +30,21 @@ ATIVACAO_MAX_TENTATIVAS = 5
 ATIVACAO_MAX_HORA_IP = 20
 ATIVACAO_ERRO = "Código inválido ou expirado."
 
+# recuperação de senha
+RESET_VALIDADE_MIN = 30
+RESET_MAX_HORA_USUARIO = 3   # links por usuário por hora
+RESET_MAX_HORA_IP = 20       # pedidos por IP por hora (generoso: atrás de proxy vários usuários dividem o IP)
+RESET_RESPOSTA = {"mensagem": "Se o e-mail estiver cadastrado, enviaremos um link para redefinir a senha."}
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+
+# cookie do refresh token (httpOnly: o JavaScript do front nunca enxerga o valor)
+COOKIE_REFRESH = "refresh_token"
+COOKIE_PATH = "/auth"        # o navegador só envia o cookie para as rotas /auth/*
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").lower() == "true"
+# "lax" serve quando front e API estão no mesmo site (ex.: app.x.com e api.x.com).
+# Em domínios totalmente diferentes use COOKIE_SAMESITE=none (exige COOKIE_SECURE=true).
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax").lower()
+
 
 # ---------- schemas ----------
 class LoginIn(BaseModel):
@@ -47,7 +63,18 @@ class TokenTempIn(BaseModel):
 
 class RefreshIn(BaseModel):
     refresh_token: str
-    
+
+    refresh_token: str | None = None   # opcional: o normal é vir pelo cookie
+
+
+class TrocarSenhaIn(BaseModel):
+    senha_atual: str
+    senha_nova: str = Field(min_length=1, max_length=128)
+
+
+class EsqueciSenhaIn(BaseModel):
+    email: str
+
 class AtivarContaIn(BaseModel):
     email: str
     codigo: str
@@ -74,7 +101,7 @@ def _audit(conn, id_usuario, acao: str, request: Request, detalhes: dict | None 
     resultado = "falha" if any(p in acao for p in _ACOES_FALHA) else "sucesso"
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO log_acesso (fk_usuario_id_usuario, acao, resultado, ip, data_hora) VALUES (%s, %s, %s, %s, now())",
+            "INSERT INTO log_acesso (fk_usuario_id_usuario, acao, resultado, ip, data_hora) VALUES (%s, %s, %s, %s, (now() AT TIME ZONE 'UTC'))",
             (id_usuario, acao, resultado, _ip(request)),
         )
 
@@ -136,7 +163,30 @@ def _mascarar(email: str) -> str:
     return f"{nome[:1]}***@{dominio}"
 
 
-def _emitir_sessao(conn, user: dict, request: Request, familia: uuid.UUID | None = None) -> dict:
+def _set_cookie_refresh(response: Response, raw: str) -> None:
+    response.set_cookie(
+        COOKIE_REFRESH, raw,
+        max_age=REFRESH_DIAS * 86400,
+        httponly=True, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE, path=COOKIE_PATH,
+    )
+
+
+def _limpar_cookie_refresh(response: Response) -> None:
+    response.delete_cookie(
+        COOKIE_REFRESH, path=COOKIE_PATH,
+        httponly=True, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE,
+    )
+
+
+def _checar_origem(request: Request) -> None:
+    """Defesa extra contra CSRF nas rotas que usam o cookie (vale também com SameSite=None)."""
+    origem = request.headers.get("origin")
+    if origem and origem not in config.CORS_ORIGINS:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Origem não permitida")
+
+
+def _emitir_sessao(conn, user: dict, request: Request, response: Response,
+                   familia: uuid.UUID | None = None) -> dict:
     raw, h = novo_refresh()
     with conn.cursor() as cur:
         cur.execute(
@@ -147,6 +197,7 @@ def _emitir_sessao(conn, user: dict, request: Request, familia: uuid.UUID | None
             (user["id_usuario"], str(familia or uuid.uuid4()), h, REFRESH_DIAS,
              _ip(request), request.headers.get("user-agent", "")[:255]),
         )
+    _set_cookie_refresh(response, raw)   # o refresh vai só no cookie, não no JSON
     return {
         "access_token": criar_access_token(user["id_usuario"], user["perfil"]),
         "token_type": "bearer",
@@ -199,7 +250,6 @@ def _gerar_e_enviar_codigo(conn, user: dict, background: BackgroundTasks) -> str
 
 
 # ---------- login ----------
-@router.post("/login")
 def _continuar_login(conn, user, request, response, background):
     if os.getenv("LOGIN_2FA_EMAIL", "true").lower() != "true":
         sessao = _emitir_sessao(conn, user, request, response)
@@ -221,8 +271,8 @@ def _continuar_login(conn, user, request, response, background):
         "token_temporario": criar_token_2fa(user["id_usuario"]),
     }
 
-
-def login(body: LoginIn, request: Request, background: BackgroundTasks, conn=Depends(get_conn)):
+@router.post("/login")
+def login(body: LoginIn, request: Request, response: Response, background: BackgroundTasks, conn=Depends(get_conn)):
     email = body.email.strip().lower()
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("SELECT id_usuario, senha AS senha_hash, (status = 'ativo') AS ativo FROM usuario WHERE lower(email) = %s", (email,))
@@ -244,7 +294,7 @@ def login(body: LoginIn, request: Request, background: BackgroundTasks, conn=Dep
     user = carregar_usuario(conn, row["id_usuario"])
 
     if os.getenv("LOGIN_2FA_EMAIL", "true").lower() != "true":
-        sessao = _emitir_sessao(conn, user, request)
+        sessao = _emitir_sessao(conn, user, request, response)
         _audit(conn, user["id_usuario"], "login_ok", request)
         conn.commit()
         return sessao
@@ -353,7 +403,7 @@ def reenviar_codigo(body: TokenTempIn, request: Request, background: BackgroundT
 
 
 @router.post("/2fa/verify")
-def verificar_2fa(body: Verify2FAIn, request: Request, conn=Depends(get_conn)):
+def verificar_2fa(body: Verify2FAIn, request: Request, response: Response, conn=Depends(get_conn)):
     user = _usuario_do_token_temporario(conn, body.token_temporario)
     if _bloqueado(conn, user["id_usuario"]):
         _negar_bloqueio(conn, request, user["id_usuario"], "2fa_bloqueado")
@@ -392,7 +442,7 @@ def verificar_2fa(body: Verify2FAIn, request: Request, conn=Depends(get_conn)):
 
     with conn.cursor() as cur:
         cur.execute("UPDATE codigo_2fa_email SET usado_em = now() WHERE id_codigo = %s", (cod["id_codigo"],))
-    sessao = _emitir_sessao(conn, user, request)
+    sessao = _emitir_sessao(conn, user, request, response)
     _audit(conn, user["id_usuario"], "login_ok_2fa", request, {"metodo": "email"})
     conn.commit()
     return sessao
@@ -400,8 +450,16 @@ def verificar_2fa(body: Verify2FAIn, request: Request, conn=Depends(get_conn)):
 
 # ---------- refresh / logout ----------
 @router.post("/refresh")
-def refresh(body: RefreshIn, request: Request, conn=Depends(get_conn)):
-    h = hash_token(body.refresh_token)
+def refresh(request: Request, response: Response, body: RefreshIn | None = None, conn=Depends(get_conn)):
+    """Troca o refresh token (cookie) por um novo access token. O front chama isto ao abrir o app."""
+    raw = request.cookies.get(COOKIE_REFRESH)
+    if raw:
+        _checar_origem(request)
+    elif body and body.refresh_token:   # compatibilidade com clientes que ainda mandam no corpo
+        raw = body.refresh_token
+    else:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sem sessão")
+    h = hash_token(raw)
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
@@ -432,13 +490,19 @@ def refresh(body: RefreshIn, request: Request, conn=Depends(get_conn)):
 
     with conn.cursor() as cur:
         cur.execute("UPDATE refresh_token SET usado_em = now() WHERE id_refresh_token = %s", (rt["id_refresh_token"],))
-    sessao = _emitir_sessao(conn, user, request, familia=rt["familia"])
+    sessao = _emitir_sessao(conn, user, request, response, familia=rt["familia"])
     conn.commit()
     return sessao
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(body: RefreshIn, request: Request, conn=Depends(get_conn)):
+def logout(request: Request, response: Response, body: RefreshIn | None = None, conn=Depends(get_conn)):
+    raw = request.cookies.get(COOKIE_REFRESH) or (body.refresh_token if body else None)
+    _limpar_cookie_refresh(response)
+    if not raw:
+        return
+    if request.cookies.get(COOKIE_REFRESH):
+        _checar_origem(request)
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -447,7 +511,7 @@ def logout(body: RefreshIn, request: Request, conn=Depends(get_conn)):
                AND revogado_em IS NULL
             RETURNING fk_usuario_id_usuario
             """,
-            (hash_token(body.refresh_token),),
+            (hash_token(raw),),
         )
         r = cur.fetchone()
     if r:

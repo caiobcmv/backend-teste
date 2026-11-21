@@ -23,7 +23,7 @@ OrigemAPI = Annotated[str, PlainSerializer(_origem_api, return_type=str)]
 class StatusUsuario(str, Enum):
     ativo = "ativo"
     inativo = "inativo"
-
+    pendente = "pendente"
 
 class PerfilOut(BaseModel):
     id_perfil: int
@@ -256,17 +256,7 @@ class ParecerEstruturadoSchema(BaseModel):
 class ParecerIAResponse(BaseModel):
     id_lote: int
     modelo: str
-    origem: str  # 'CACHE', 'GEMINI' ou 'FALLBACK_TEMPLATE'
+    origem: str  # 'CACHE' (já gerado), 'IA' (gerado agora) ou 'FALLBACK_TEMPLATE' (IA indisponível)
     conteudo: ParecerEstruturadoSchema
-    data_geracao: datetime    
-    
-class StatusUsuario(str, Enum):
-    ativo = "ativo"
-    inativo = "inativo"
-    pendente = "pendente"
-    
-class UsuarioCreate(BaseModel):
-    nome: str = Field(min_length=1, max_length=150)
-    email: EmailStr
-    senha: Optional[str] = Field(default=None, min_length=8, max_length=72)
-    id_perfil: int
+    data_geracao: datetime
+    expira_em: datetime  # a partir daí o próximo GET gera um parecer novo

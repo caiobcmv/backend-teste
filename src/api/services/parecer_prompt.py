@@ -153,4 +153,4 @@ def parecer_template(dados: dict) -> list[dict]:
         else:
             texto = "Recomendações a serem definidas pelo responsável técnico."
         secoes.append({"titulo": titulo, "texto": texto})
-    return secoes
+    return secoes

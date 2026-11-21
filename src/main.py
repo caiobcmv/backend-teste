@@ -1,6 +1,7 @@
-# busca a última leitura do ThingSpeak e grava no banco.
+# Busca a última leitura do ThingSpeak e grava no banco.
 import time
 from src import config, thingspeak_client, database
+from src import agendador
 from src.api.services import notificacao
 
 def main():
@@ -9,6 +10,8 @@ def main():
     print(f"Iniciando polling a cada {config.POLL_INTERVAL_SECONDS}s (Ctrl+C pra parar)\n")
 
     ultimo_entry_id = None
+
+    agendador.iniciar_em_segundo_plano()  # risco, janela, irrigação, prejuízo, preditivos e IA
 
     while True:
         try:
