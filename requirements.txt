@@ -16,6 +16,6 @@ bcrypt
 argon2-cffi
 pyjwt
 
-#Testes
+# Testes
 pytest
 
