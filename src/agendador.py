@@ -1,9 +1,10 @@
 """Gera automaticamente tudo o que é "preditivo" e alimenta o dashboard.
 
-Sem isto, os cards de janela de colheita, irrigação, risco, prejuízo, alertas preditivos e parecer
-de IA ficam vazios até alguém chamar os POST ".../gerar" na mão. O main.py inicia um segundo plano
-(thread) que, de tempos em tempos, roda cada tarefa quando chega a hora dela. Em segundo plano, uma
-chamada lenta (Open-Meteo, IA) nunca atrasa a coleta do ThingSpeak.
+Sem esse mecanismo, os cards de janela de colheita, irrigação, risco, prejuízo, alertas preditivos e parecer de IA permanecem sem dados até que os respectivos endpoints POST `.../gerar` sejam acionados manualmente.
+
+O arquivo `main.py` inicializa uma thread em segundo plano, responsável por executar periodicamente cada tarefa conforme seu respectivo intervalo de execução.
+
+Dessa forma, operações com maior tempo de resposta, como consultas à Open-Meteo e processamento por IA, são executadas em segundo plano, sem bloquear ou atrasar o processo de coleta de dados do ThingSpeak.
 
 As tarefas reaproveitam as funções dos próprios endpoints (mesmas regras, mesma auditoria em
 log_acesso), sem passar por HTTP nem por login. Uma tarefa que falha é anotada no log e tentada de
