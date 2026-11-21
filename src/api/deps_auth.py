@@ -16,7 +16,7 @@ def carregar_usuario(conn, id_usuario: int) -> dict | None:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT u.id_usuario, u.nome, u.email, (u.status = 'ativo') AS ativo, p.nome AS perfil
+            SELECT u.id_usuario, u.nome, u.email, u.deve_trocar_senha, (u.status = 'ativo') AS ativo, p.nome AS perfil
               FROM usuario u
               JOIN perfil p ON p.id_perfil = u.fk_perfil_id_perfil
              WHERE u.id_usuario = %s
@@ -26,7 +26,7 @@ def carregar_usuario(conn, id_usuario: int) -> dict | None:
         return cur.fetchone()
 
 
-def get_current_user(cred=Depends(bearer), conn=Depends(get_conn)):
+def get_current_user_sem_bloqueio(cred=Depends(bearer), conn=Depends(get_conn)):
     if cred is None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
@@ -41,6 +41,15 @@ def get_current_user(cred=Depends(bearer), conn=Depends(get_conn)):
             status.HTTP_401_UNAUTHORIZED,
             "Usuário inativo ou inexistente",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+def get_current_user(cred=Depends(bearer), conn=Depends(get_conn)):
+    user = get_current_user_sem_bloqueio(cred, conn)
+    if user["deve_trocar_senha"]:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            {"codigo": "TROCA_SENHA_OBRIGATORIA", "mensagem": "É necessário trocar a senha antes de continuar."},
         )
     return user
 

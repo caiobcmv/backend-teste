@@ -36,3 +36,26 @@ def enviar_codigo_login(para: str, nome: str, codigo: str, validade_min: int) ->
         "Nunca compartilhe este código com ninguém.\n"
     )
     _enviar(para, f"{codigo} é o seu código de acesso", corpo)
+
+# primeiro acesso
+def enviar_link_ativacao(para: str, nome: str, codigo: str, link: str, validade_h: int) -> None:
+    corpo = (
+        f"Olá, {nome}.\n\n"
+        "Uma conta foi criada para você no Dashboard FVS.\n"
+        f"Para ativá-la e criar a sua senha, use o código abaixo ou acesse o link (vale por {validade_h} horas e só pode ser usado uma vez):\n\n"
+        f"Código de ativação: {codigo}\n"
+        f"{link}\n\n"
+        "No primeiro acesso você vai criar a sua própria senha e aceitar os Termos e Políticas de Segurança. "
+        "Nunca compartilhe este código.\n\n"
+        "Se você não esperava este convite, ignore este e-mail.\n"
+    )
+    _enviar(para, "Ative a sua conta", corpo)
+
+
+def enviar_aviso_conta_ativada(para: str, nome: str) -> None:
+    corpo = (
+        f"Olá, {nome}.\n\n"
+        "A sua conta no Dashboard FVS foi ativada e a senha foi criada.\n\n"
+        "Se não foi você, avise o administrador do sistema imediatamente.\n"
+    )
+    _enviar(para, "Conta ativada", corpo)    

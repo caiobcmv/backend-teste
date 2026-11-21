@@ -259,3 +259,14 @@ class ParecerIAResponse(BaseModel):
     origem: str  # 'CACHE', 'GEMINI' ou 'FALLBACK_TEMPLATE'
     conteudo: ParecerEstruturadoSchema
     data_geracao: datetime    
+    
+class StatusUsuario(str, Enum):
+    ativo = "ativo"
+    inativo = "inativo"
+    pendente = "pendente"
+    
+class UsuarioCreate(BaseModel):
+    nome: str = Field(min_length=1, max_length=150)
+    email: EmailStr
+    senha: Optional[str] = Field(default=None, min_length=8, max_length=72)
+    id_perfil: int

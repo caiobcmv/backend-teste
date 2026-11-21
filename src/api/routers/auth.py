@@ -2,18 +2,19 @@ import hmac
 import os
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
+from src import config
 from psycopg2.extras import RealDictCursor
-from pydantic import BaseModel
+from pydantic import BaseModel, Field 
 
 from ..deps import get_conn
-from ..deps_auth import carregar_usuario, get_current_user
-from ..email_service import enviar_codigo_login
+from ..deps_auth import carregar_usuario, get_current_user_sem_bloqueio
+from ..email_service import enviar_aviso_conta_ativada, enviar_aviso_senha_alterada, enviar_codigo_login, enviar_link_reset_senha
 from ..security_auth import (
     ACCESS_MIN, DUMMY_HASH, REFRESH_DIAS,
     criar_access_token, criar_token_2fa, decodificar, gerar_codigo_email,
-    hash_codigo_email, hash_senha, hash_token, novo_refresh, precisa_rehash,
-    verificar_senha,
+    hash_codigo_email, hash_senha, hash_token, normalizar_codigo_ativacao, novo_refresh, precisa_rehash,
+    validar_politica_senha, verificar_senha,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -24,6 +25,9 @@ CODIGO_VALIDADE_MIN = 10
 CODIGO_MAX_TENTATIVAS = 5    # erros permitidos por código
 REENVIO_SEG = 60             # intervalo mínimo entre e-mails
 MAX_ENVIOS_HORA = 5
+ATIVACAO_MAX_TENTATIVAS = 5
+ATIVACAO_MAX_HORA_IP = 20
+ATIVACAO_ERRO = "Código inválido ou expirado."
 
 
 # ---------- schemas ----------
@@ -43,6 +47,18 @@ class TokenTempIn(BaseModel):
 
 class RefreshIn(BaseModel):
     refresh_token: str
+    
+class AtivarContaIn(BaseModel):
+    email: str
+    codigo: str
+    senha_nova: str = Field(min_length=1, max_length=128)
+    confirmar_senha: str
+    aceite_termos: bool
+
+class RedefinirSenhaIn(BaseModel):
+    token: str
+    senha_nova: str = Field(min_length=1, max_length=128)
+    desconectar_outros: bool = True
 
 
 # ---------- helpers ----------
@@ -70,18 +86,49 @@ def _negar(conn, request, id_usuario, acao, detalhes=None, msg="Credenciais inv�
     raise HTTPException(code, msg, headers={"WWW-Authenticate": "Bearer"} if code == 401 else None)
 
 
-def _bloqueado(conn, id_usuario: int) -> bool:
+def _bloqueio_restante(conn, id_usuario: int) -> int:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT count(*) FROM log_acesso
-             WHERE fk_usuario_id_usuario = %s
-               AND acao IN ('login_falha', '2fa_falha')
-               AND data_hora > now() - make_interval(mins => %s)
+            SELECT CEIL(EXTRACT(EPOCH FROM (data_hora + make_interval(mins => %(j)s) - (now() AT TIME ZONE 'UTC'))))
+              FROM (
+                SELECT data_hora FROM log_acesso
+                 WHERE fk_usuario_id_usuario = %(u)s
+                   AND acao IN ('login_falha', '2fa_falha', 'senha_atual_falha')
+                   AND data_hora > (now() AT TIME ZONE 'UTC') - make_interval(mins => %(j)s)
+                   AND data_hora > COALESCE(
+                         (SELECT max(data_hora) FROM log_acesso
+                           WHERE fk_usuario_id_usuario = %(u)s AND acao IN ('senha_redefinida', 'conta_ativada')),
+                         '-infinity')
+                 ORDER BY data_hora DESC
+                OFFSET %(m)s LIMIT 1
+              ) f
             """,
-            (id_usuario, JANELA_MIN),
+            {"j": JANELA_MIN, "u": id_usuario, "m": MAX_FALHAS - 1},
         )
-        return cur.fetchone()[0] >= MAX_FALHAS
+        row = cur.fetchone()
+    return max(int(row[0]), 0) if row else 0
+
+
+def _bloqueado(conn, id_usuario: int) -> bool:
+    return _bloqueio_restante(conn, id_usuario) > 0
+
+
+def _negar_bloqueio(conn, request, id_usuario, acao):
+    segundos = _bloqueio_restante(conn, id_usuario)
+    _audit(conn, id_usuario, acao, request)
+    conn.commit()
+    raise HTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        {"codigo": "CONTA_BLOQUEADA", "mensagem": "Conta temporariamente bloqueada.", "segundos_restantes": segundos},
+        headers={"Retry-After": str(segundos)},
+    )
+
+
+def _exigir_politica(senha: str, email: str):
+    faltando = validar_politica_senha(senha, email)
+    if faltando:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"codigo": "SENHA_FRACA", "requisitos_faltando": faltando})
 
 
 def _mascarar(email: str) -> str:
@@ -102,10 +149,10 @@ def _emitir_sessao(conn, user: dict, request: Request, familia: uuid.UUID | None
         )
     return {
         "access_token": criar_access_token(user["id_usuario"], user["perfil"]),
-        "refresh_token": raw,
         "token_type": "bearer",
         "expires_in": ACCESS_MIN * 60,
-    }
+        "deve_trocar_senha": bool(user.get("deve_trocar_senha")),
+}
 
 
 def _usuario_do_token_temporario(conn, token: str) -> dict:
@@ -153,6 +200,28 @@ def _gerar_e_enviar_codigo(conn, user: dict, background: BackgroundTasks) -> str
 
 # ---------- login ----------
 @router.post("/login")
+def _continuar_login(conn, user, request, response, background):
+    if os.getenv("LOGIN_2FA_EMAIL", "true").lower() != "true":
+        sessao = _emitir_sessao(conn, user, request, response)
+        _audit(conn, user["id_usuario"], "login_ok", request)
+        conn.commit()
+        return sessao
+
+    resultado = _gerar_e_enviar_codigo(conn, user, background)
+    if resultado == "limite":
+        _negar(conn, request, user["id_usuario"], "2fa_envio_limite", msg="Muitos códigos solicitados. Tente mais tarde.", code=429)
+
+    _audit(conn, user["id_usuario"], "login_senha_ok_codigo_enviado" if resultado == "enviado" else "login_senha_ok_codigo_pendente", request)
+    conn.commit()
+    return {
+        "requer_2fa": True,
+        "metodo": "email",
+        "email_mascarado": _mascarar(user["email"]),
+        "expira_em_min": CODIGO_VALIDADE_MIN,
+        "token_temporario": criar_token_2fa(user["id_usuario"]),
+    }
+
+
 def login(body: LoginIn, request: Request, background: BackgroundTasks, conn=Depends(get_conn)):
     email = body.email.strip().lower()
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -160,7 +229,7 @@ def login(body: LoginIn, request: Request, background: BackgroundTasks, conn=Dep
         row = cur.fetchone()
 
     if row and _bloqueado(conn, row["id_usuario"]):
-        _negar(conn, request, row["id_usuario"], "login_bloqueado", msg="Muitas tentativas. Tente mais tarde.", code=429)
+        _negar_bloqueio(conn, request, row["id_usuario"], "login_bloqueado")
 
     # sempre roda um verify (mesmo sem usuário) para o tempo de resposta não revelar se o e-mail existe
     senha_ok = verificar_senha(body.senha, row["senha_hash"] if row else DUMMY_HASH)
@@ -194,12 +263,84 @@ def login(body: LoginIn, request: Request, background: BackgroundTasks, conn=Dep
         "token_temporario": criar_token_2fa(user["id_usuario"]),
     }
 
+@router.post("/ativar-conta")
+def ativar_conta(body: AtivarContaIn, request: Request, response: Response, background: BackgroundTasks, conn=Depends(get_conn)):
+    email = body.email.strip().lower()
+    ip = _ip(request)
+
+    if not body.aceite_termos:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"codigo": "TERMOS_NAO_ACEITOS", "mensagem": "É necessário aceitar os Termos e Políticas de Segurança."})
+    if body.senha_nova != body.confirmar_senha:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"codigo": "SENHAS_DIFERENTES", "mensagem": "As senhas não coincidem."})
+    _exigir_politica(body.senha_nova, email)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT count(*) FROM log_acesso
+             WHERE acao = 'ativacao_falha' AND ip = %s
+               AND data_hora > (now() AT TIME ZONE 'UTC') - interval '1 hour'
+            """,
+            (ip,),
+        )
+        if cur.fetchone()[0] >= ATIVACAO_MAX_HORA_IP:
+            _negar(conn, request, None, "ativacao_limite", msg="Muitas tentativas. Tente mais tarde.", code=429)
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT u.id_usuario, t.id_ativacao, t.codigo_hash, (t.expira_em < now()) AS expirado
+              FROM usuario u
+              JOIN ativacao_token t ON t.fk_usuario_id_usuario = u.id_usuario
+             WHERE lower(u.email) = %s AND u.status = 'pendente' AND t.usado_em IS NULL
+             ORDER BY t.criado_em DESC
+             LIMIT 1
+               FOR UPDATE OF t
+            """,
+            (email,),
+        )
+        row = cur.fetchone()
+
+    esperado = hash_token(normalizar_codigo_ativacao(body.codigo))
+    if not row or row["expirado"] or not hmac.compare_digest(esperado, row["codigo_hash"]):
+        if row:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE ativacao_token
+                       SET tentativas = tentativas + 1,
+                           usado_em = CASE WHEN tentativas + 1 >= %s THEN now() ELSE usado_em END
+                     WHERE id_ativacao = %s
+                    """,
+                    (ATIVACAO_MAX_TENTATIVAS, row["id_ativacao"]),
+                )
+        _negar(conn, request, row["id_usuario"] if row else None, "ativacao_falha", msg=ATIVACAO_ERRO, code=400)
+
+    id_usuario = row["id_usuario"]
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE usuario
+               SET senha = %s, status = 'ativo', ativado_em = now(),
+                   termos_aceitos_em = now(), termos_versao = %s, deve_trocar_senha = false
+             WHERE id_usuario = %s
+            """,
+            (hash_senha(body.senha_nova), config.TERMOS_VERSAO, id_usuario),
+        )
+        cur.execute("UPDATE ativacao_token SET usado_em = now() WHERE fk_usuario_id_usuario = %s AND usado_em IS NULL", (id_usuario,))
+        cur.execute("UPDATE refresh_token SET revogado_em = now() WHERE fk_usuario_id_usuario = %s AND revogado_em IS NULL", (id_usuario,))
+        cur.execute("UPDATE codigo_2fa_email SET usado_em = now() WHERE fk_usuario_id_usuario = %s AND usado_em IS NULL", (id_usuario,))
+    _audit(conn, id_usuario, "conta_ativada", request)
+
+    user = carregar_usuario(conn, id_usuario)
+    background.add_task(enviar_aviso_conta_ativada, user["email"], user["nome"])
+    return _continuar_login(conn, user, request, response, background)
 
 @router.post("/2fa/reenviar")
 def reenviar_codigo(body: TokenTempIn, request: Request, background: BackgroundTasks, conn=Depends(get_conn)):
     user = _usuario_do_token_temporario(conn, body.token_temporario)
     if _bloqueado(conn, user["id_usuario"]):
-        _negar(conn, request, user["id_usuario"], "2fa_bloqueado", msg="Muitas tentativas. Tente mais tarde.", code=429)
+        _negar_bloqueio(conn, request, user["id_usuario"], "2fa_bloqueado")
 
     resultado = _gerar_e_enviar_codigo(conn, user, background)
     if resultado != "enviado":
@@ -215,7 +356,7 @@ def reenviar_codigo(body: TokenTempIn, request: Request, background: BackgroundT
 def verificar_2fa(body: Verify2FAIn, request: Request, conn=Depends(get_conn)):
     user = _usuario_do_token_temporario(conn, body.token_temporario)
     if _bloqueado(conn, user["id_usuario"]):
-        _negar(conn, request, user["id_usuario"], "2fa_bloqueado", msg="Muitas tentativas. Tente mais tarde.", code=429)
+        _negar_bloqueio(conn, request, user["id_usuario"], "2fa_bloqueado")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
@@ -315,11 +456,11 @@ def logout(body: RefreshIn, request: Request, conn=Depends(get_conn)):
 
 
 @router.get("/me")
-def quem_sou_eu(user=Depends(get_current_user)):
-    """Dados do usuário logado (nome e perfil do cabeçalho)."""
+def quem_sou_eu(user=Depends(get_current_user_sem_bloqueio)):
     return {
         "id_usuario": user["id_usuario"],
         "nome": user["nome"],
         "email": user["email"],
         "perfil": user["perfil"],
+        "deve_trocar_senha": user["deve_trocar_senha"],
     }

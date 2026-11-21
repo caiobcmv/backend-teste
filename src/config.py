@@ -38,3 +38,5 @@ NOTIFICACAO_JANELA_HORAS = int(os.getenv("NOTIFICACAO_JANELA_HORAS", "24"))
 NOTIFICACAO_MAX_TENTATIVAS = int(os.getenv("NOTIFICACAO_MAX_TENTATIVAS", "3"))
 NOTIFICACAO_RETRY_MIN = int(os.getenv("NOTIFICACAO_RETRY_MIN", "5"))
 NOTIFICACAO_PERFIS = [p.strip().lower() for p in os.getenv("NOTIFICACAO_PERFIS", "").split(",") if p.strip()]
+ATIVACAO_VALIDADE_H = int(os.getenv("ATIVACAO_VALIDADE_H", "72"))
+TERMOS_VERSAO = os.getenv("TERMOS_VERSAO", "1.0")

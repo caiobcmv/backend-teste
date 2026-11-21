@@ -98,3 +98,32 @@ def gerar_codigo_email() -> str:
 def hash_codigo_email(id_usuario: int, codigo: str) -> str:
     # HMAC com chave do servidor: só 1 milhão de combinações, então SHA-256 puro seria quebrável offline
     return hmac.new(EMAIL_OTP_KEY.encode(), f"{id_usuario}:{codigo}".encode(), hashlib.sha256).hexdigest()
+
+ALFABETO_ATIVACAO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def gerar_codigo_ativacao() -> str:
+    c = "".join(secrets.choice(ALFABETO_ATIVACAO) for _ in range(10))
+    return f"{c[:5]}-{c[5:]}"
+
+
+def normalizar_codigo_ativacao(codigo: str) -> str:
+    return codigo.replace("-", "").replace(" ", "").upper()
+
+
+def validar_politica_senha(senha: str, email: str = "") -> list[str]:
+    faltando = []
+    if len(senha) < 8:
+        faltando.append("minimo_8_caracteres")
+    if not any(c.isupper() for c in senha):
+        faltando.append("letra_maiuscula")
+    if not any(c.islower() for c in senha):
+        faltando.append("letra_minuscula")
+    if not any(c.isdigit() for c in senha):
+        faltando.append("numero")
+    if not any(not c.isalnum() and not c.isspace() for c in senha):
+        faltando.append("caractere_especial")
+    local = email.split("@")[0].lower()
+    if len(local) >= 3 and local in senha.lower():
+        faltando.append("nao_conter_email")
+    return faltando    
