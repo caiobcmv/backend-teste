@@ -125,7 +125,7 @@ O código usa:
 
 O `seed.sql` não cadastra previsões de IA; sem esses dados, `/riscos/*` retorna listas vazias. Se o esquema do banco mudar, este backend precisará acompanhar.
 
-## Como Executar
+## Como Executar:
 
 ### 1. Clonar o repositório
 
