@@ -2,8 +2,7 @@
 
 Cria (só o que ainda não existir): faixa em config_parametro, um lote, um sensor com lote,
 um sensor SEM lote e uma série de leituras que sobe e ultrapassa o limite de temperatura.
-Tudo usa a API e as funções do próprio projeto (processar_leitura), então passa pelas mesmas
-validações da coleta real. Sensores de demo levam "[DEMO]" no nome.
+Tudo usa a API e as funções do próprio projeto (processar_leitura), então passa pelas mesmas validações da coleta real. Sensores de demo levam "[DEMO]" no nome.
 
 Uso (API rodando; na raiz do projeto, mesmo terminal onde SMOKE_EMAIL/SMOKE_SENHA estão definidos):
     python -m scripts.seed_demo
