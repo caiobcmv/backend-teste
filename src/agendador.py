@@ -49,6 +49,20 @@ class _Requisicao:
 _REQ = _Requisicao()
 
 
+def _usuario_sistema() -> dict:
+    """Usuário "de sistema" para as funções de rota que exigem get_current_user.
+    Perfil de administrador = escopo total (ver escopo.id_dono)."""
+    from src.api.deps_auth import ADMIN
+    return {
+        "id_usuario": None,
+        "nome": "agendador",
+        "email": None,
+        "ativo": True,
+        "deve_trocar_senha": False,
+        "perfil": ADMIN,
+    }
+
+
 def _cursor(conn):
     try:
         from psycopg2.extras import RealDictCursor
@@ -184,7 +198,7 @@ def pre_aquecer_pareceres(conn) -> str:
     contagem = {"IA": 0, "FALLBACK_TEMPLATE": 0, "CACHE": 0, "erro": 0}
     for id_lote in ids:
         try:
-            r = parecer_ia.obter_parecer(id_lote=id_lote, conn=conn)
+            r = parecer_ia.obter_parecer(id_lote=id_lote, conn=conn, user=_usuario_sistema())
             contagem[r["origem"]] = contagem.get(r["origem"], 0) + 1
         except Exception as e:
             conn.rollback()
