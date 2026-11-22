@@ -9,7 +9,7 @@ from src.api.routers import (alertas, alertas_preditivos, analista, central_aler
                              dashboard, frutas, ia, leituras, leituras_rejeitadas, lotes,
                              perfis, previsoes, previsoes_ia, recomendacoes, relatorios,
                              relatorios_gerados, risco, sensor_leituras, sensores,
-                             usuarios, pareceres, notificacoes, parecer_ia, dashboard_stream)
+                             usuarios, pareceres, notificacoes, parecer_ia, dashboard_stream, calibracao)
 
 # O Administrador passa em TODAS as regras (bypass em deps_auth), então não é listado aqui.
 # O Produtor/Exportador é somente leitura: nenhuma regra lhe dá POST/PUT/PATCH/DELETE.
@@ -66,6 +66,7 @@ for r in (leituras, leituras_rejeitadas, sensor_leituras, dashboard, clima, lote
 
 # resumos agregados (sem filtro por dono): só Analista/Admin
 app.include_router(analista.router, dependencies=so_analista)
+app.include_router(calibracao.router, dependencies=analista_edita)
 
 for r in (sensores, config_parametros, alertas, alertas_preditivos, catalogo,
           relatorios, pareceres, central_alertas):
