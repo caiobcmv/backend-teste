@@ -14,6 +14,8 @@ from psycopg2.extras import Json, RealDictCursor
 from src.api import calculos_previsao as calc
 from src.api import previsao_repo as repo
 from src.api.deps import get_conn
+from src.api.deps_auth import get_current_user
+from src.api.escopo import exigir_lote
 from src.api.schemas import ParecerEstruturadoSchema, ParecerIAResponse
 from src.api.services.ia_service import gerar_parecer
 
@@ -102,8 +104,9 @@ def _ultimo(cur, id_lote: int, so_validos: bool) -> dict | None:
 
 
 @router.get("", response_model=ParecerIAResponse)
-def obter_parecer(id_lote: int = Query(..., ge=1), conn=Depends(get_conn)):
+def obter_parecer(id_lote: int = Query(..., ge=1), conn=Depends(get_conn), user=Depends(get_current_user)):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        exigir_lote(cur, user, id_lote)  # 404 se o lote não existir OU for de outro dono (antes de gastar IA)
         # 1. parecer ainda válido: só devolve (caminho normal, quase sempre)
         valido = _ultimo(cur, id_lote, so_validos=True)
         if valido:

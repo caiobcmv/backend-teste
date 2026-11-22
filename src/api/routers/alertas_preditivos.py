@@ -6,6 +6,8 @@ from psycopg2.extras import RealDictCursor
 
 from src.api.auditoria import auditar
 from src.api.deps import get_conn
+from src.api.deps_auth import get_current_user
+from src.api.escopo import id_dono
 from src.api.schemas import (
     AlertaPreditivoCreate,
     AlertaPreditivoOut,
@@ -102,8 +104,14 @@ def listar_alertas_preditivos(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     conn=Depends(get_conn),
+    user=Depends(get_current_user),
 ):
     where, params = [], []
+    dono = id_dono(user)
+    if dono is not None:  # Produtor: só alertas dos lotes/sensores dele
+        where.append("(id_lote IN (SELECT id_lote FROM lote WHERE fk_usuario_id_usuario = %s)"
+                     " OR id_sensor IN (SELECT id_sensor FROM sensor WHERE fk_usuario_id_usuario = %s))")
+        params += [dono, dono]
     if id_lote is not None:
         where.append("id_lote = %s")
         params.append(id_lote)

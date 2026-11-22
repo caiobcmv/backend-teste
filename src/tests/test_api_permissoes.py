@@ -38,6 +38,7 @@ def test_produtor_nao_pode_escrever_retorna_403(monkeypatch):
             "nome": "Produtor Teste",
             "email": "prod@teste.com",
             "ativo": True,
+            "deve_trocar_senha": False,
             "perfil": "Produtor/Exportador",
         },
     )
@@ -64,6 +65,7 @@ def test_analista_nao_gerencia_usuarios_retorna_403(monkeypatch):
             "id_usuario": id_u,
             "nome": "Analista Teste",
             "email": "analista@teste.com",
+            "deve_trocar_senha": False,
             "ativo": True,
             "perfil": "Analista de Dados",
         },

@@ -5,9 +5,10 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 import jwt
 from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHashError, VerifyMismatchError
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from fastapi import HTTPException, status
 
 JWT_SECRET = os.environ["JWT_SECRET"]
@@ -19,18 +20,9 @@ REFRESH_DIAS = 7
 
 _ph = PasswordHasher()  # argon2id com parâmetros padrão
 
-# hash falso para gastar o mesmo tempo quando o e-mail não existe (evita enumeração de usuários)
-DUMMY_HASH = _ph.hash("senha-falsa-tempo-constante")
-
 
 # ---------- senhas ----------
-import bcrypt  
-from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-
-_ph = PasswordHasher()  
-
-# hash fixo usado quando o e-mail não existe (tempo de resposta igual)
+# hash fixo usado quando o e-mail não existe (tempo de resposta igual; evita enumeração de usuários)
 DUMMY_HASH = _ph.hash("dummy-password-for-timing-equalization")
 
 _PREFIXOS_BCRYPT = ("$2a$", "$2b$", "$2y$")

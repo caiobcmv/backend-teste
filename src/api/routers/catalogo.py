@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 
 from src.api.auditoria import auditar
 from src.api.deps import get_conn
+from src.api.deps_auth import get_current_user
+from src.api.escopo import exigir_lote, id_dono
 
 router = APIRouter(tags=["catalogo"])
 
@@ -136,15 +138,18 @@ def atualizar_perda_risco(categoria: str, dados: PerdaUpdate, request: Request, 
 
 
 @router.get("/classificacao/resumo")
-def resumo_classificacao(id_lote: Optional[int] = None, conn=Depends(get_conn)):
+def resumo_classificacao(id_lote: Optional[int] = None, conn=Depends(get_conn), user=Depends(get_current_user)):
     """Destino da produção (lote_classificacao): kg e % por categoria."""
-    sql = "SELECT categoria, SUM(quantidade_kg) AS kg FROM lote_classificacao"
-    params = ()
+    sql = ("SELECT categoria, SUM(quantidade_kg) AS kg FROM lote_classificacao"
+           " WHERE (%(dono)s::int IS NULL OR fk_lote_id_lote IN"
+           " (SELECT id_lote FROM lote WHERE fk_usuario_id_usuario = %(dono)s))")  # Produtor: só lotes dele
+    params = {"dono": id_dono(user)}
     if id_lote is not None:
-        sql += " WHERE fk_lote_id_lote = %s"
-        params = (id_lote,)
+        sql += " AND fk_lote_id_lote = %(id_lote)s"
+        params["id_lote"] = id_lote
     sql += " GROUP BY categoria ORDER BY kg DESC"
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        exigir_lote(cur, user, id_lote)  # 404 se o lote não existir OU for de outro dono
         cur.execute(sql, params)
         linhas = cur.fetchall()
     total = sum(float(r["kg"]) for r in linhas)

@@ -71,3 +71,17 @@ def test_banco_fora_do_ar_nao_derruba_o_stream(monkeypatch):
         raise RuntimeError("banco indisponível")
     monkeypatch.setattr(ds, "buscar_ultima_leitura", quebra)
     assert ds.montar_payload()["origem"] == "simulado"
+
+
+# ---------------------------------------------------------------- ticket do stream
+def test_ticket_e_de_uso_unico():
+    t = ds.emitir_ticket(7)
+    assert ds.consumir_ticket(t) is True
+    assert ds.consumir_ticket(t) is False      # já usado
+
+
+def test_ticket_desconhecido_ou_vencido_e_recusado(monkeypatch):
+    assert ds.consumir_ticket("ticket-que-nunca-existiu-123456") is False
+    t = ds.emitir_ticket(7)
+    ds._tickets[t] = (ds.time.monotonic() - 1, 7)   # força vencimento
+    assert ds.consumir_ticket(t) is False

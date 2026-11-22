@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from src.api.deps import get_conn
 from src.api.deps_auth import get_current_user
+from src.api.escopo import exigir_lote, filtrar_por_dono
 from src.api.services.llm_client import LLMError, gerar_json
 from src.api.services.parecer_prompt import (
     SYSTEM_PROMPT, montar_prompt_usuario, parecer_template, secoes_para_texto, validar_saida)
@@ -285,6 +286,7 @@ def gerar(body: GerarIn, request: Request, conn=Depends(get_conn),
 @router.get("")
 def listar(id_lote: int, conn=Depends(get_conn), user=Depends(get_current_user)):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        exigir_lote(cur, user, id_lote)  # 404 se o lote não existir OU for de outro dono
         cur.execute(
             """SELECT id_parecer, tipo, status, origem_texto, gerado_em, assinado_em,
                       assinante_nome, crea
@@ -295,8 +297,12 @@ def listar(id_lote: int, conn=Depends(get_conn), user=Depends(get_current_user))
 
 @router.get("/{id_parecer}")
 def obter(id_parecer: int, conn=Depends(get_conn), user=Depends(get_current_user)):
+    where, params = ["p.id_parecer = %s"], [id_parecer]
+    filtrar_por_dono(user, "l.fk_usuario_id_usuario", where, params)  # Produtor: só pareceres de lotes dele
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT * FROM parecer_agronomico WHERE id_parecer = %s", (id_parecer,))
+        cur.execute(
+            "SELECT p.* FROM parecer_agronomico p JOIN lote l ON l.id_lote = p.fk_lote_id_lote"
+            " WHERE " + " AND ".join(where), params)
         r = cur.fetchone()
     if not r:
         raise HTTPException(404, "Parecer não encontrado")

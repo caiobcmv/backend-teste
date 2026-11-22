@@ -65,7 +65,7 @@ def api(monkeypatch):
     """Devolve uma função que registra os dados do 'banco' e faz o GET autenticado."""
     monkeypatch.setattr(deps_auth, "carregar_usuario", lambda conn, i: {
         "id_usuario": i, "nome": "Analista", "email": "a@t.com",
-        "ativo": True, "perfil": "Analista de Dados"})
+        "ativo": True, "deve_trocar_senha": False, "perfil": "Analista de Dados"})
     token = criar_access_token(id_usuario=1, perfil="Analista de Dados")
 
     def chamar(dados, id_alerta=41, autenticado=True):

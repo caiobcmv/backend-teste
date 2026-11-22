@@ -62,8 +62,6 @@ class TokenTempIn(BaseModel):
 
 
 class RefreshIn(BaseModel):
-    refresh_token: str
-
     refresh_token: str | None = None   # opcional: o normal é vir pelo cookie
 
 

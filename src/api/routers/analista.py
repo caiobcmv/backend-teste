@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends
 from psycopg2.extras import RealDictCursor
 
+from src import config
 from src.api.deps import get_conn
 
 router = APIRouter(prefix="/analista", tags=["analista"])
@@ -56,6 +57,11 @@ def resumo_sensores(conn=Depends(get_conn)):
     ultima = ing["ultima_leitura"]
     return {
         "sensores": sensores,
+        "coleta": {
+            "intervalo_s": config.POLL_INTERVAL_SECONDS,
+            "fonte": "ThingSpeak",
+            "canal": config.THINGSPEAK_CHANNEL_ID,
+        },
         "ingestao_24h": {
             "gravadas": ing["gravadas"],
             "rejeitadas": rej["rejeitadas_24h"],

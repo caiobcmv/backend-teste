@@ -6,6 +6,8 @@ from psycopg2.extras import RealDictCursor
 
 from src import config
 from src.api.deps import get_conn
+from src.api.deps_auth import get_current_user
+from src.api.escopo import exigir_sensor
 
 router = APIRouter(prefix="/sensores", tags=["sensores"])
 
@@ -32,12 +34,14 @@ def _iso_utc(dt: datetime) -> str:
 
 
 @router.get("/{id_sensor}/leituras")
-def leituras_agregadas(id_sensor: int, periodo: Periodo = Periodo.h24, conn=Depends(get_conn)):
+def leituras_agregadas(id_sensor: int, periodo: Periodo = Periodo.h24, conn=Depends(get_conn),
+                       user=Depends(get_current_user)):
     janela, agregacao = REGRAS[periodo]
     fim = datetime.now(timezone.utc).replace(tzinfo=None)
     inicio = fim - janela
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        exigir_sensor(cur, user, id_sensor)  # 404 se não existir OU for de outro dono
         cur.execute("SELECT ambiente FROM sensor WHERE id_sensor = %s", (id_sensor,))
         sensor = cur.fetchone()
         if sensor is None:

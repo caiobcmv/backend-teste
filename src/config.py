@@ -51,3 +51,5 @@ NOTIFICACAO_RETRY_MIN = int(os.getenv("NOTIFICACAO_RETRY_MIN", "5"))
 NOTIFICACAO_PERFIS = [p.strip().lower() for p in os.getenv("NOTIFICACAO_PERFIS", "").split(",") if p.strip()]
 ATIVACAO_VALIDADE_H = int(os.getenv("ATIVACAO_VALIDADE_H", "72"))
 TERMOS_VERSAO = os.getenv("TERMOS_VERSAO", "1.0")
+
+ESP32_INTERVALO_ENVIO_S = int(os.getenv("ESP32_INTERVALO_ENVIO_S", "20"))
