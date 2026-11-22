@@ -8,8 +8,6 @@ from psycopg2.extras import RealDictCursor
 
 from src.api.auditoria import auditar
 from src.api.deps import get_conn
-from src.api.deps_auth import get_current_user
-from src.api.escopo import exigir_sensor, filtrar_por_dono, id_dono
 from src.api.schemas import SensorCreate, SensorOut, SensorUpdate
 
 router = APIRouter(prefix="/sensores", tags=["sensores"])
@@ -17,10 +15,11 @@ router = APIRouter(prefix="/sensores", tags=["sensores"])
 SELECT_BASE = """
     SELECT s.id_sensor, s.nome, s.tipo_sensor, s.localizacao, s.channel_id,
            s.status::text AS status, s.fk_lote_id_lote AS id_lote, s.ambiente,
-           u.data_hora AS ultima_leitura, u.temperatura, u.umidade, u.origem
+           u.data_hora AS ultima_leitura, u.temperatura, u.umidade,
+           u.umidade_solo, u.temperatura_solo, u.origem
     FROM sensor s
     LEFT JOIN LATERAL (
-        SELECT l.data_hora, l.temperatura, l.umidade, l.origem
+        SELECT l.data_hora, l.temperatura, l.umidade, l.umidade_solo, l.temperatura_solo, l.origem
         FROM leitura_climatica l
         WHERE l.fk_sensor_id_sensor = s.id_sensor
         ORDER BY l.data_hora DESC, l.id_leitura DESC
@@ -73,10 +72,8 @@ def listar_sensores(
     id_lote: Optional[int] = None,
     status: Optional[str] = None,
     conn=Depends(get_conn),
-    user=Depends(get_current_user),
 ):
     where, params = [], []
-    filtrar_por_dono(user, "s.fk_usuario_id_usuario", where, params)
     if ambiente:
         where.append("s.ambiente = %s")
         params.append(ambiente)
@@ -101,7 +98,7 @@ def _posicao_ilustrativa(base_lat: float, base_lng: float, id_sensor: int) -> tu
 
 
 @router.get("/topologia")
-def topologia_sensores(conn=Depends(get_conn), user=Depends(get_current_user)):
+def topologia_sensores(conn=Depends(get_conn)):
     """
     Alimenta os dois mapas do frontend (Satélite e Gateway).
     Telemetria, status e rejeições são reais do banco;
@@ -135,9 +132,8 @@ def topologia_sensores(conn=Depends(get_conn), user=Depends(get_current_user)):
                 ORDER BY l.data_hora DESC, l.id_leitura DESC
                 LIMIT 1
             ) u ON true
-            WHERE (%s::int IS NULL OR s.fk_usuario_id_usuario = %s)
             ORDER BY s.id_sensor
-        """, (id_dono(user), id_dono(user)))
+        """)
         sensores_db = cur.fetchall()
 
     # Âncora de área agrícola irrigada em Petrolina-PE caso não haja coordenada na propriedade
@@ -201,9 +197,8 @@ def topologia_sensores(conn=Depends(get_conn), user=Depends(get_current_user)):
         "sensores": nos,
     }
 @router.get("/{id_sensor}", response_model=SensorOut)
-def obter_sensor(id_sensor: int, conn=Depends(get_conn), user=Depends(get_current_user)):
+def obter_sensor(id_sensor: int, conn=Depends(get_conn)):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        exigir_sensor(cur, user, id_sensor)
         return _ou_404(_buscar_sensor(cur, id_sensor))
 
 

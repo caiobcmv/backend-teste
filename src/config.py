@@ -32,6 +32,17 @@ TEMP_MAX_VALIDA = float(os.getenv("TEMP_MAX_VALIDA", "80"))
 UMIDADE_MIN_VALIDA = float(os.getenv("UMIDADE_MIN_VALIDA", "0"))
 UMIDADE_MAX_VALIDA = float(os.getenv("UMIDADE_MAX_VALIDA", "100")) 
 
+# Número do field do ThingSpeak em que cada medida chega. Os de solo são opcionais: vazio = não coleta.
+def _campo_opcional(nome):
+    valor = os.getenv(nome, "").strip()
+    return int(valor) if valor.isdigit() else None
+
+
+TS_FIELD_TEMPERATURA = int(os.getenv("TS_FIELD_TEMPERATURA", "1"))
+TS_FIELD_UMIDADE = int(os.getenv("TS_FIELD_UMIDADE", "2"))
+TS_FIELD_UMIDADE_SOLO = _campo_opcional("TS_FIELD_UMIDADE_SOLO")
+TS_FIELD_TEMPERATURA_SOLO = _campo_opcional("TS_FIELD_TEMPERATURA_SOLO")
+
 NOTIFICACAO_ATIVA = os.getenv("NOTIFICACAO_ATIVA", "false").lower() == "true"
 NOTIFICACAO_INTERVALO_MIN = int(os.getenv("NOTIFICACAO_INTERVALO_MIN", "60"))
 NOTIFICACAO_JANELA_HORAS = int(os.getenv("NOTIFICACAO_JANELA_HORAS", "24"))

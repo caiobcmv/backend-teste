@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
-from src.api.deps import get_conn
+from src import database
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -21,23 +21,31 @@ UMID_BASE = 61.0
 
 
 def buscar_ultima_leitura():
-    with get_conn() as conn:
+    """Última leitura real (ThingSpeak) com temperatura e umidade preenchidas."""
+    conn = database.conectar()
+    try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT temperatura, umidade, data_hora
-                FROM leitura_climatica
-                ORDER BY data_hora DESC
+                SELECT l.temperatura, l.umidade, l.data_hora, s.nome
+                FROM leitura_climatica l
+                JOIN sensor s ON s.id_sensor = l.fk_sensor_id_sensor
+                WHERE lower(l.origem) = 'thingspeak'
+                  AND l.temperatura IS NOT NULL AND l.umidade IS NOT NULL
+                ORDER BY l.data_hora DESC, l.id_leitura DESC
                 LIMIT 1
                 """
             )
             row = cur.fetchone()
+    finally:
+        conn.close()
     if not row:
         return None
     return {
         "temperatura": float(row[0]),
         "umidade": float(row[1]),
         "data_hora": row[2],
+        "sensor": row[3],
     }
 
 
@@ -67,7 +75,7 @@ def montar_payload():
                 "umidade": real["umidade"],
                 "origem": "real",
                 "timestamp": dh.isoformat(),
-                "sensor": "DHT11 ESP32-C3",
+                "sensor": real.get("sensor") or "Sensor",
             }
 
     sim = leitura_simulada()

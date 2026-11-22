@@ -65,6 +65,8 @@ class LeituraOut(BaseModel):
     id_sensor: Optional[int] = None
     temperatura: Optional[float] = None
     umidade: Optional[float] = None
+    umidade_solo: Optional[float] = None
+    temperatura_solo: Optional[float] = None
     data_hora: Optional[DataUTC] = None
     data_recebimento: Optional[DataUTC] = None
     origem: Optional[OrigemAPI] = None
@@ -125,6 +127,8 @@ class SensorOut(BaseModel):
     ultima_leitura: Optional[DataUTC] = None
     temperatura: Optional[float] = None
     umidade: Optional[float] = None
+    umidade_solo: Optional[float] = None
+    temperatura_solo: Optional[float] = None
     origem: Optional[OrigemAPI] = None
 
 

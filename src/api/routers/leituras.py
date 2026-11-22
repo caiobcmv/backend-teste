@@ -5,27 +5,24 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extras import RealDictCursor
 
 from src.api.deps import get_conn
-from src.api.deps_auth import get_current_user
-from src.api.escopo import exigir_sensor, filtrar_leituras_por_dono, id_dono
-from src.api.filtros import clausula, montar_where
+from src.api.filtros import clausula, garantir_sensor, montar_where
 from src.api.schemas import EstatisticasLeituraOut, LeituraOut
 
 router = APIRouter(prefix="/leituras", tags=["leituras"])
 
 SELECT_BASE = """
     SELECT id_leitura, fk_sensor_id_sensor AS id_sensor, temperatura, umidade,
-           data_hora, data_recebimento, origem, entry_id_thingspeak
+           umidade_solo, temperatura_solo, data_hora, data_recebimento, origem, entry_id_thingspeak
     FROM leitura_climatica
 """
 
 
-def _filtros(user, id_sensor: Optional[int], inicio: Optional[datetime], fim: Optional[datetime]):
+def _filtros(id_sensor: Optional[int], inicio: Optional[datetime], fim: Optional[datetime]):
     where, params = [], []
     if id_sensor is not None:
         where.append("fk_sensor_id_sensor = %s")
         params.append(id_sensor)
     montar_where("data_hora", inicio, fim, where, params)
-    filtrar_leituras_por_dono(user, "fk_sensor_id_sensor", where, params)
     return clausula(where), params
 
 
@@ -37,11 +34,10 @@ def listar_leituras(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     conn=Depends(get_conn),
-    user=Depends(get_current_user),
 ):
-    where_sql, params = _filtros(user, id_sensor, inicio, fim)
+    where_sql, params = _filtros(id_sensor, inicio, fim)
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        exigir_sensor(cur, user, id_sensor)
+        garantir_sensor(cur, id_sensor)
         cur.execute(
             SELECT_BASE + where_sql + " ORDER BY data_hora DESC, id_leitura DESC LIMIT %s OFFSET %s",
             params + [limit, offset],
@@ -49,10 +45,10 @@ def listar_leituras(
         return cur.fetchall()
 
 @router.get("/ultima", response_model=LeituraOut)
-def ultima_leitura(id_sensor: Optional[int] = None, conn=Depends(get_conn), user=Depends(get_current_user)):
-    where_sql, params = _filtros(user, id_sensor, None, None)
+def ultima_leitura(id_sensor: Optional[int] = None, conn=Depends(get_conn)):
+    where_sql, params = _filtros(id_sensor, None, None)
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        exigir_sensor(cur, user, id_sensor)
+        garantir_sensor(cur, id_sensor)
         cur.execute(
             SELECT_BASE + where_sql + " ORDER BY data_hora DESC, id_leitura DESC LIMIT 1", params
         )
@@ -68,11 +64,10 @@ def estatisticas_leituras(
     inicio: Optional[datetime] = None,
     fim: Optional[datetime] = None,
     conn=Depends(get_conn),
-    user=Depends(get_current_user),
 ):
-    where_sql, params = _filtros(user, id_sensor, inicio, fim)
+    where_sql, params = _filtros(id_sensor, inicio, fim)
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        exigir_sensor(cur, user, id_sensor)
+        garantir_sensor(cur, id_sensor)
         cur.execute(
             f"""
             SELECT COUNT(*)::int                               AS total_leituras,
@@ -92,13 +87,9 @@ def estatisticas_leituras(
 
 
 @router.get("/{id_leitura}", response_model=LeituraOut)
-def obter_leitura(id_leitura: int, conn=Depends(get_conn), user=Depends(get_current_user)):
+def obter_leitura(id_leitura: int, conn=Depends(get_conn)):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(
-            SELECT_BASE + " WHERE id_leitura = %s AND (%s::int IS NULL OR fk_sensor_id_sensor IN"
-            " (SELECT id_sensor FROM sensor WHERE fk_usuario_id_usuario = %s))",
-            (id_leitura, id_dono(user), id_dono(user)),
-        )
+        cur.execute(SELECT_BASE + " WHERE id_leitura = %s", (id_leitura,))
         leitura = cur.fetchone()
     if leitura is None:
         raise HTTPException(status_code=404, detail="Leitura não encontrada")
