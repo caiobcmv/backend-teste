@@ -513,9 +513,11 @@ def quem_sou_eu(user=Depends(get_current_user_sem_bloqueio)):
     }
 
 
+# ---------- trocar senha (usuário logado) ----------
 @router.post("/trocar-senha", status_code=status.HTTP_204_NO_CONTENT)
 def trocar_senha(body: TrocarSenhaIn, request: Request, background: BackgroundTasks,
                  user=Depends(get_current_user_sem_bloqueio), conn=Depends(get_conn)):
+    """Exige a senha atual (um token de acesso roubado não basta para tomar a conta)."""
     id_usuario = user["id_usuario"]
     if _bloqueado(conn, id_usuario):
         _negar_bloqueio(conn, request, id_usuario, "trocar_senha_bloqueado")
@@ -531,6 +533,7 @@ def trocar_senha(body: TrocarSenhaIn, request: Request, background: BackgroundTa
 
     with conn.cursor() as cur:
         cur.execute("UPDATE usuario SET senha = %s, deve_trocar_senha = false WHERE id_usuario = %s",
+                # derruba as outras sessões e mantém só a deste navegador (se o cookie veio; sem ele, derruba todas)
                     (hash_senha(body.senha_nova), id_usuario))
         cur.execute(
             """
@@ -545,8 +548,10 @@ def trocar_senha(body: TrocarSenhaIn, request: Request, background: BackgroundTa
     background.add_task(enviar_aviso_senha_alterada, user["email"], user["nome"])
 
 
+# ---------- recuperar senha (usuário deslogado) ----------
 @router.post("/esqueci-senha")
 def esqueci_senha(body: EsqueciSenhaIn, request: Request, background: BackgroundTasks, conn=Depends(get_conn)):
+    """Resposta idêntica exista o e-mail ou não (não revela quem tem conta)."""
     email = body.email.strip().lower()
     ip = _ip(request)
 
@@ -563,7 +568,7 @@ def esqueci_senha(body: EsqueciSenhaIn, request: Request, background: Background
             return RESET_RESPOSTA
         cur.execute("SELECT id_usuario FROM usuario WHERE lower(email) = %s AND status = 'ativo'", (email,))
         row = cur.fetchone()
-
+    # registra mesmo quando o e-mail não existe, para o limite por IP valer contra varredura de e-mails
     _audit(conn, row["id_usuario"] if row else None, "reset_solicitado", request)
 
     if row:
@@ -574,6 +579,7 @@ def esqueci_senha(body: EsqueciSenhaIn, request: Request, background: Background
                 (user["id_usuario"],),
             )
             if cur.fetchone()[0] < RESET_MAX_HORA_USUARIO:
+             # só o link mais novo vale
                 cur.execute(
                     "UPDATE senha_reset_token SET usado_em = now() WHERE fk_usuario_id_usuario = %s AND usado_em IS NULL",
                     (user["id_usuario"],),
@@ -615,6 +621,7 @@ def redefinir_senha(body: RedefinirSenhaIn, request: Request, background: Backgr
                     (hash_senha(body.senha_nova), user["id_usuario"]))
         cur.execute("UPDATE senha_reset_token SET usado_em = now() WHERE fk_usuario_id_usuario = %s AND usado_em IS NULL",
                     (user["id_usuario"],))
+    # senha nova => todas as sessões e códigos 2FA pendentes deixam de valer
         if body.desconectar_outros:
             cur.execute("UPDATE refresh_token SET revogado_em = now() WHERE fk_usuario_id_usuario = %s AND revogado_em IS NULL",
                         (user["id_usuario"],))
@@ -623,4 +630,5 @@ def redefinir_senha(body: RedefinirSenhaIn, request: Request, background: Backgr
     _audit(conn, user["id_usuario"], "senha_redefinida", request)
     conn.commit()
     background.add_task(enviar_aviso_senha_alterada, user["email"], user["nome"])
-    return {"mensagem": "Senha atualizada. Entre com a nova senha."}
+        # sem login automático: o usuário entra pelo fluxo normal (senha + 2FA)
+    return {"mensagem": "Senha redefinida. Entre com a nova senha."}
