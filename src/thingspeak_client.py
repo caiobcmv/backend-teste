@@ -45,6 +45,18 @@ def _campo(feed, numero):
     return feed.get(f"field{numero}") if numero else None
 
 
+def _raw_para_pct(raw):
+    """Converte a leitura bruta do ADC (0-4095) do sensor de solo em % de umidade.
+    Sensor capacitivo: quanto mais seco, maior o valor bruto."""
+    if raw is None:
+        return None
+    seco, molhado = config.SOLO_RAW_SECO, config.SOLO_RAW_MOLHADO
+    if seco == molhado:
+        return None
+    pct = (seco - raw) / (seco - molhado) * 100
+    return round(max(0.0, min(100.0, pct)), 1)
+
+
 def _montar_leitura(feed):
     """Converte um feed do ThingSpeak no dicionário usado pelo resto do sistema.
     Os números dos fields vêm do .env (TS_FIELD_*). Solo só entra se estiver mapeado."""
@@ -58,8 +70,9 @@ def _montar_leitura(feed):
         "umidade_bruta": _campo(feed, config.TS_FIELD_UMIDADE),
     }
     if config.TS_FIELD_UMIDADE_SOLO:
-        leitura["umidade_solo"] = _float_seguro(_campo(feed, config.TS_FIELD_UMIDADE_SOLO))
-        leitura["umidade_solo_bruta"] = _campo(feed, config.TS_FIELD_UMIDADE_SOLO)
+        bruto = _campo(feed, config.TS_FIELD_UMIDADE_SOLO)
+        leitura["umidade_solo"] = _raw_para_pct(_float_seguro(bruto))
+        leitura["umidade_solo_bruta"] = bruto
     if config.TS_FIELD_TEMPERATURA_SOLO:
         leitura["temperatura_solo"] = _float_seguro(_campo(feed, config.TS_FIELD_TEMPERATURA_SOLO))
         leitura["temperatura_solo_bruta"] = _campo(feed, config.TS_FIELD_TEMPERATURA_SOLO)

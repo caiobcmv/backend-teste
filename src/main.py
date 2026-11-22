@@ -22,11 +22,13 @@ def main():
             elif leitura["entry_id"] != ultimo_entry_id:
                 status = database.processar_leitura(leitura)
                 if status == "gravada":
-                    print(
-                        f"[OK] entry_id={leitura['entry_id']} "
+                    print(                
+                         f"[OK] entry_id={leitura['entry_id']} "
                         f"temp={leitura['temperatura']} umid={leitura['umidade']} "
+                        f"solo={leitura.get('umidade_solo')} "
                         f"-> gravado no banco"
                     )
+                    
                 elif status == "rejeitada":
                     print(
                         f"[REJEITADA] entry_id={leitura['entry_id']} "

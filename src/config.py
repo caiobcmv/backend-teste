@@ -32,6 +32,9 @@ TEMP_MAX_VALIDA = float(os.getenv("TEMP_MAX_VALIDA", "80"))
 UMIDADE_MIN_VALIDA = float(os.getenv("UMIDADE_MIN_VALIDA", "0"))
 UMIDADE_MAX_VALIDA = float(os.getenv("UMIDADE_MAX_VALIDA", "100")) 
 
+SOLO_RAW_SECO = float(os.getenv("SOLO_RAW_SECO", "3000"))
+SOLO_RAW_MOLHADO = float(os.getenv("SOLO_RAW_MOLHADO", "1200"))
+
 # Número do field do ThingSpeak em que cada medida chega. Os de solo são opcionais: vazio = não coleta.
 def _campo_opcional(nome):
     valor = os.getenv(nome, "").strip()
