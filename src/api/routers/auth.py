@@ -293,25 +293,8 @@ def login(body: LoginIn, request: Request, response: Response, background: Backg
 
     user = carregar_usuario(conn, row["id_usuario"])
 
-    if os.getenv("LOGIN_2FA_EMAIL", "true").lower() != "true":
-        sessao = _emitir_sessao(conn, user, request, response)
-        _audit(conn, user["id_usuario"], "login_ok", request)
-        conn.commit()
-        return sessao
+    return _continuar_login(conn, user, request, response, background)
 
-    resultado = _gerar_e_enviar_codigo(conn, user, background)
-    if resultado == "limite":
-        _negar(conn, request, user["id_usuario"], "2fa_envio_limite", msg="Muitos códigos solicitados. Tente mais tarde.", code=429)
-
-    _audit(conn, user["id_usuario"], "login_senha_ok_codigo_enviado" if resultado == "enviado" else "login_senha_ok_codigo_pendente", request)
-    conn.commit()
-    return {
-        "requer_2fa": True,
-        "metodo": "email",
-        "email_mascarado": _mascarar(user["email"]),
-        "expira_em_min": CODIGO_VALIDADE_MIN,
-        "token_temporario": criar_token_2fa(user["id_usuario"]),
-    }
 
 @router.post("/ativar-conta")
 def ativar_conta(body: AtivarContaIn, request: Request, response: Response, background: BackgroundTasks, conn=Depends(get_conn)):
@@ -528,3 +511,116 @@ def quem_sou_eu(user=Depends(get_current_user_sem_bloqueio)):
         "perfil": user["perfil"],
         "deve_trocar_senha": user["deve_trocar_senha"],
     }
+
+
+@router.post("/trocar-senha", status_code=status.HTTP_204_NO_CONTENT)
+def trocar_senha(body: TrocarSenhaIn, request: Request, background: BackgroundTasks,
+                 user=Depends(get_current_user_sem_bloqueio), conn=Depends(get_conn)):
+    id_usuario = user["id_usuario"]
+    if _bloqueado(conn, id_usuario):
+        _negar_bloqueio(conn, request, id_usuario, "trocar_senha_bloqueado")
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT senha FROM usuario WHERE id_usuario = %s", (id_usuario,))
+        hash_atual = cur.fetchone()[0]
+    if not verificar_senha(body.senha_atual, hash_atual or DUMMY_HASH):
+        _negar(conn, request, id_usuario, "senha_atual_falha", msg="Senha atual incorreta", code=403)
+    if body.senha_nova == body.senha_atual:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A nova senha deve ser diferente da atual")
+    _exigir_politica(body.senha_nova, user["email"])
+
+    with conn.cursor() as cur:
+        cur.execute("UPDATE usuario SET senha = %s, deve_trocar_senha = false WHERE id_usuario = %s",
+                    (hash_senha(body.senha_nova), id_usuario))
+        cur.execute(
+            """
+            UPDATE refresh_token SET revogado_em = now()
+             WHERE fk_usuario_id_usuario = %s AND revogado_em IS NULL
+               AND familia IS DISTINCT FROM (SELECT familia FROM refresh_token WHERE token_hash = %s)
+            """,
+            (id_usuario, hash_token(request.cookies.get(COOKIE_REFRESH, ""))),
+        )
+    _audit(conn, id_usuario, "senha_trocada", request)
+    conn.commit()
+    background.add_task(enviar_aviso_senha_alterada, user["email"], user["nome"])
+
+
+@router.post("/esqueci-senha")
+def esqueci_senha(body: EsqueciSenhaIn, request: Request, background: BackgroundTasks, conn=Depends(get_conn)):
+    email = body.email.strip().lower()
+    ip = _ip(request)
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT count(*) AS n FROM log_acesso
+             WHERE acao = 'reset_solicitado' AND ip = %s
+               AND data_hora > (now() AT TIME ZONE 'UTC') - interval '1 hour'
+            """,
+            (ip,),
+        )
+        if cur.fetchone()["n"] >= RESET_MAX_HORA_IP:
+            return RESET_RESPOSTA
+        cur.execute("SELECT id_usuario FROM usuario WHERE lower(email) = %s AND status = 'ativo'", (email,))
+        row = cur.fetchone()
+
+    _audit(conn, row["id_usuario"] if row else None, "reset_solicitado", request)
+
+    if row:
+        user = carregar_usuario(conn, row["id_usuario"])
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM senha_reset_token WHERE fk_usuario_id_usuario = %s AND criado_em > now() - interval '1 hour'",
+                (user["id_usuario"],),
+            )
+            if cur.fetchone()[0] < RESET_MAX_HORA_USUARIO:
+                cur.execute(
+                    "UPDATE senha_reset_token SET usado_em = now() WHERE fk_usuario_id_usuario = %s AND usado_em IS NULL",
+                    (user["id_usuario"],),
+                )
+                raw = secrets.token_urlsafe(32)
+                cur.execute(
+                    """
+                    INSERT INTO senha_reset_token (fk_usuario_id_usuario, token_hash, expira_em, ip)
+                    VALUES (%s, %s, now() + make_interval(mins => %s), %s)
+                    """,
+                    (user["id_usuario"], hash_token(raw), RESET_VALIDADE_MIN, ip),
+                )
+                link = f"{FRONTEND_URL}/redefinir-senha?token={raw}"
+                background.add_task(enviar_link_reset_senha, user["email"], user["nome"], link, RESET_VALIDADE_MIN)
+    conn.commit()
+    return RESET_RESPOSTA
+
+
+@router.post("/redefinir-senha")
+def redefinir_senha(body: RedefinirSenhaIn, request: Request, background: BackgroundTasks, conn=Depends(get_conn)):
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT id_reset, fk_usuario_id_usuario, usado_em, (expira_em < now()) AS expirado
+              FROM senha_reset_token WHERE token_hash = %s FOR UPDATE
+            """,
+            (hash_token(body.token),),
+        )
+        rt = cur.fetchone()
+
+    user = carregar_usuario(conn, rt["fk_usuario_id_usuario"]) if rt else None
+    if not rt or rt["usado_em"] or rt["expirado"] or not user or not user["ativo"]:
+        _negar(conn, request, rt["fk_usuario_id_usuario"] if rt else None, "reset_falha",
+               msg="Link inválido ou expirado. Peça um novo.", code=400)
+    _exigir_politica(body.senha_nova, user["email"])
+
+    with conn.cursor() as cur:
+        cur.execute("UPDATE usuario SET senha = %s, deve_trocar_senha = false WHERE id_usuario = %s",
+                    (hash_senha(body.senha_nova), user["id_usuario"]))
+        cur.execute("UPDATE senha_reset_token SET usado_em = now() WHERE fk_usuario_id_usuario = %s AND usado_em IS NULL",
+                    (user["id_usuario"],))
+        if body.desconectar_outros:
+            cur.execute("UPDATE refresh_token SET revogado_em = now() WHERE fk_usuario_id_usuario = %s AND revogado_em IS NULL",
+                        (user["id_usuario"],))
+        cur.execute("UPDATE codigo_2fa_email SET usado_em = now() WHERE fk_usuario_id_usuario = %s AND usado_em IS NULL",
+                    (user["id_usuario"],))
+    _audit(conn, user["id_usuario"], "senha_redefinida", request)
+    conn.commit()
+    background.add_task(enviar_aviso_senha_alterada, user["email"], user["nome"])
+    return {"mensagem": "Senha atualizada. Entre com a nova senha."}

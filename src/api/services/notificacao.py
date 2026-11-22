@@ -9,9 +9,6 @@ from psycopg2.extras import RealDictCursor
 
 from src import config, database
 
-from ..email_service import enviar_link_ativacao
-from ..security_auth import gerar_codigo_ativacao, hash_token, normalizar_codigo_ativacao
-
 log = logging.getLogger("notificacao")
 
 NIVEIS = ("baixo", "médio", "alto")
