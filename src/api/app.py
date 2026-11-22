@@ -2,14 +2,14 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src import config
-from src.api.deps_auth import (ADMIN, ANALISTA, PRODUTOR_EXPORTADOR, require_role,
+from src.api.deps_auth import (ADMIN, ANALISTA, PRODUTOR_EXPORTADOR, get_current_user, require_role,
                                require_role_por_metodo)
 from src.api.routers import (alertas, alertas_preditivos, analista, auditoria, auth,
                              catalogo, clima, config_parametros, dados_mercado,
                              dashboard, frutas, ia, leituras, leituras_rejeitadas, lotes,
                              perfis, previsoes, previsoes_ia, recomendacoes, relatorios,
                              relatorios_gerados, risco, sensor_leituras, sensores,
-                             usuarios, pareceres, notificacoes, parecer_ia)
+                             usuarios, pareceres, notificacoes, parecer_ia, dashboard_stream)
 
 # O Administrador passa em TODAS as regras (bypass em deps_auth), então não é listado aqui.
 # O Produtor/Exportador é somente leitura: nenhuma regra lhe dá POST/PUT/PATCH/DELETE.
@@ -46,6 +46,7 @@ app.add_middleware(
 # público (login, refresh, 2FA) — /auth/me exige token
 app.include_router(auth.router)
 app.include_router(notificacoes.router)
+app.include_router(dashboard_stream.router)  # SSE sem token: EventSource não envia Authorization
 
 for r in (perfis, usuarios):
     app.include_router(r.router, dependencies=admin)
