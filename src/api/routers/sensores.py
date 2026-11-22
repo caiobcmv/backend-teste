@@ -8,6 +8,8 @@ from psycopg2.extras import RealDictCursor
 
 from src.api.auditoria import auditar
 from src.api.deps import get_conn
+from src.api.deps_auth import get_current_user
+from src.api.escopo import exigir_sensor, filtrar_por_dono, id_dono
 from src.api.schemas import SensorCreate, SensorOut, SensorUpdate
 
 router = APIRouter(prefix="/sensores", tags=["sensores"])
@@ -71,8 +73,10 @@ def listar_sensores(
     id_lote: Optional[int] = None,
     status: Optional[str] = None,
     conn=Depends(get_conn),
+    user=Depends(get_current_user),
 ):
     where, params = [], []
+    filtrar_por_dono(user, "s.fk_usuario_id_usuario", where, params)
     if ambiente:
         where.append("s.ambiente = %s")
         params.append(ambiente)
@@ -97,7 +101,7 @@ def _posicao_ilustrativa(base_lat: float, base_lng: float, id_sensor: int) -> tu
 
 
 @router.get("/topologia")
-def topologia_sensores(conn=Depends(get_conn)):
+def topologia_sensores(conn=Depends(get_conn), user=Depends(get_current_user)):
     """
     Alimenta os dois mapas do frontend (Satélite e Gateway).
     Telemetria, status e rejeições são reais do banco;
@@ -120,7 +124,7 @@ def topologia_sensores(conn=Depends(get_conn)):
                        FROM leitura_rejeitada r
                        WHERE r.fk_sensor_id_sensor = s.id_sensor
                          AND r.data_rejeicao > (now() AT TIME ZONE 'UTC') - interval '1 hour'
-                       ORDER BY r.data_reicao DESC
+                       ORDER BY r.data_rejeicao DESC
                        LIMIT 1
                    ) AS motivo_rejeicao_recente
             FROM sensor s
@@ -131,8 +135,9 @@ def topologia_sensores(conn=Depends(get_conn)):
                 ORDER BY l.data_hora DESC, l.id_leitura DESC
                 LIMIT 1
             ) u ON true
+            WHERE (%s::int IS NULL OR s.fk_usuario_id_usuario = %s)
             ORDER BY s.id_sensor
-        """)
+        """, (id_dono(user), id_dono(user)))
         sensores_db = cur.fetchall()
 
     # Âncora de área agrícola irrigada em Petrolina-PE caso não haja coordenada na propriedade
@@ -196,8 +201,9 @@ def topologia_sensores(conn=Depends(get_conn)):
         "sensores": nos,
     }
 @router.get("/{id_sensor}", response_model=SensorOut)
-def obter_sensor(id_sensor: int, conn=Depends(get_conn)):
+def obter_sensor(id_sensor: int, conn=Depends(get_conn), user=Depends(get_current_user)):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        exigir_sensor(cur, user, id_sensor)
         return _ou_404(_buscar_sensor(cur, id_sensor))
 
 

@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 from src.api.alerta_detalhe import JANELA_SERIE_HORAS, montar_detalhe
 from src.api.deps import get_conn
+from src.api.deps_auth import get_current_user
+from src.api.escopo import filtrar_por_dono, id_dono
 
 router = APIRouter(prefix="/alertas", tags=["alertas"])
 
@@ -58,8 +60,10 @@ def listar_alertas(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     conn=Depends(get_conn),
+    user=Depends(get_current_user),
 ):
     where, params = [], []
+    filtrar_por_dono(user, "s.fk_usuario_id_usuario", where, params)
     if status:
         where.append("lower(a.status) = lower(%s)")
         params.append(status)
@@ -93,9 +97,10 @@ def reconhecer_todos(conn=Depends(get_conn)):
 
 
 @router.get("/{id_alerta}", response_model=AlertaOut)
-def obter_alerta(id_alerta: int, conn=Depends(get_conn)):
+def obter_alerta(id_alerta: int, conn=Depends(get_conn), user=Depends(get_current_user)):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(SELECT_BASE + " WHERE a.id_alerta = %s", (id_alerta,))
+        cur.execute(SELECT_BASE + " WHERE a.id_alerta = %s AND (%s::int IS NULL OR s.fk_usuario_id_usuario = %s)",
+                    (id_alerta, id_dono(user), id_dono(user)))
         linha = cur.fetchone()
     if linha is None:
         raise HTTPException(status_code=404, detail="Alerta não encontrado")
@@ -115,10 +120,11 @@ CONTEXTO_SQL = """
 
 
 @router.get("/{id_alerta}/detalhe")
-def detalhe_alerta(id_alerta: int, conn=Depends(get_conn)):
+def detalhe_alerta(id_alerta: int, conn=Depends(get_conn), user=Depends(get_current_user)):
     """Dados para o card dinâmico: métricas vs. limites do lote, curva das últimas 2 h e contexto."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(SELECT_BASE + " WHERE a.id_alerta = %s", (id_alerta,))
+        cur.execute(SELECT_BASE + " WHERE a.id_alerta = %s AND (%s::int IS NULL OR s.fk_usuario_id_usuario = %s)",
+                    (id_alerta, id_dono(user), id_dono(user)))
         linha = cur.fetchone()
         if linha is None:
             raise HTTPException(status_code=404, detail="Alerta não encontrado")
