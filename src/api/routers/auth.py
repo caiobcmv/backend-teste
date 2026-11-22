@@ -533,8 +533,8 @@ def trocar_senha(body: TrocarSenhaIn, request: Request, background: BackgroundTa
 
     with conn.cursor() as cur:
         cur.execute("UPDATE usuario SET senha = %s, deve_trocar_senha = false WHERE id_usuario = %s",
-                # derruba as outras sessões e mantém só a deste navegador (se o cookie veio; sem ele, derruba todas)
                     (hash_senha(body.senha_nova), id_usuario))
+    # derruba as outras sessões e mantém só a deste navegador (se o cookie veio; sem ele, derruba todas)
         cur.execute(
             """
             UPDATE refresh_token SET revogado_em = now()
@@ -579,7 +579,7 @@ def esqueci_senha(body: EsqueciSenhaIn, request: Request, background: Background
                 (user["id_usuario"],),
             )
             if cur.fetchone()[0] < RESET_MAX_HORA_USUARIO:
-             # só o link mais novo vale
+                # só o link mais novo vale
                 cur.execute(
                     "UPDATE senha_reset_token SET usado_em = now() WHERE fk_usuario_id_usuario = %s AND usado_em IS NULL",
                     (user["id_usuario"],),
@@ -621,7 +621,7 @@ def redefinir_senha(body: RedefinirSenhaIn, request: Request, background: Backgr
                     (hash_senha(body.senha_nova), user["id_usuario"]))
         cur.execute("UPDATE senha_reset_token SET usado_em = now() WHERE fk_usuario_id_usuario = %s AND usado_em IS NULL",
                     (user["id_usuario"],))
-    # senha nova => todas as sessões e códigos 2FA pendentes deixam de valer
+        # senha nova => códigos 2FA pendentes deixam de valer; as sessões só caem se desconectar_outros
         if body.desconectar_outros:
             cur.execute("UPDATE refresh_token SET revogado_em = now() WHERE fk_usuario_id_usuario = %s AND revogado_em IS NULL",
                         (user["id_usuario"],))
@@ -630,5 +630,5 @@ def redefinir_senha(body: RedefinirSenhaIn, request: Request, background: Backgr
     _audit(conn, user["id_usuario"], "senha_redefinida", request)
     conn.commit()
     background.add_task(enviar_aviso_senha_alterada, user["email"], user["nome"])
-        # sem login automático: o usuário entra pelo fluxo normal (senha + 2FA)
+    # sem login automático: o usuário entra pelo fluxo normal (senha + 2FA)
     return {"mensagem": "Senha redefinida. Entre com a nova senha."}
