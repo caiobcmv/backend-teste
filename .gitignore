@@ -24,3 +24,12 @@ qa-api/reports/
 
 # logs de segurança (evidência vai copiada para seguranca/evidencias/)
 *.log
+
+# Submódulos locais / clones temporários
+raiz-agro-iot/
+
+# Relatórios e imagens gerados localmente
+*.pdf
+*.html
+*.png
+
