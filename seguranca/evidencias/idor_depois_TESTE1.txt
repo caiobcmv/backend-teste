@@ -1,0 +1,22 @@
+# idor  |  missão TESTE1  |  2026-11-22 20:07:39  |  API http://127.0.0.1:8000
+
+== Dono continua usando o que é dele (A=1, sensor 1; B=2, sensor 2)
+[OK ] A lê o próprio sensor 1 -> 200
+[OK ] B lê o próprio sensor 2 -> 200
+
+== A tenta usar o sensor 2 e o lote 2 de B trocando o ID
+[OK ] GET /sensores/2 (ler sensor) deve dar 403/404 -> 404
+[OK ] GET /sensores/2/leituras?periodo=24h (ler leituras agregadas) deve dar 403/404 -> 404
+[OK ] GET /leituras?id_sensor=2 (listar leituras) deve dar 403/404 -> 404
+[OK ] GET /leituras/ultima?id_sensor=2 (última leitura) deve dar 403/404 -> 404
+[OK ] GET /leituras/estatisticas?id_sensor=2 (estatísticas) deve dar 403/404 -> 404
+[OK ] GET /leituras-rejeitadas?id_sensor=2 (leituras rejeitadas) deve dar 403/404 -> 404
+[OK ] GET /lotes/2 (ler lote) deve dar 403/404 -> 404
+[OK ] PUT /sensores/2 (alterar configuração) deve dar 403/404 -> 403
+[OK ] PATCH /lotes/2 (alterar lote) deve dar 403/404 -> 403
+[OK ] DELETE /sensores/2 (desativar sensor) deve dar 403/404 -> 403
+
+== Depois das tentativas, B ainda usa o sensor normalmente
+[OK ] B lê o sensor e o nome NÃO foi alterado -> 200
+
+Resultado: TUDO CERTO
